@@ -1,0 +1,151 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum PaymentMethod {
+  MOBILE_MONEY
+  CARD
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETE
+  FAILED
+  CANCELED
+}
+
+// id mirrors the Supabase Auth user id (auth.users.id)
+model User {
+  id        String          @id
+  email     String          @unique
+  firstName String?
+  lastName  String?
+  phone     String?
+  avatarUrl String?
+  role      Role            @default(CUSTOMER)
+  orders    Order[]
+  tickets   Ticket[]
+  messages  TicketMessage[]
+  payments  Payment[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+}
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  products    Product[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Product {
+  id          String      @id @default(uuid())
+  name        String
+  description String?
+  price       Decimal     @db.Decimal(10, 2)
+  stock       Int         @default(0)
+  imageUrl    String?
+  isActive    Boolean     @default(true)
+  category    Category?   @relation(fields: [categoryId], references: [id])
+  categoryId  String?
+  orderItems  OrderItem[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Order {
+  id        String      @id @default(uuid())
+  user      User        @relation(fields: [userId], references: [id])
+  userId    String
+  status    OrderStatus @default(PENDING)
+  total     Decimal     @db.Decimal(10, 2)
+  items     OrderItem[]
+  payments  Payment[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId   String
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+  quantity  Int
+  unitPrice Decimal @db.Decimal(10, 2)
+}
+
+model Payment {
+  id        String        @id @default(uuid())
+  order     Order         @relation(fields: [orderId], references: [id])
+  orderId   String
+  user      User          @relation(fields: [userId], references: [id])
+  userId    String
+  reference String        @unique // Notch Pay transaction reference
+  method    PaymentMethod
+  status    PaymentStatus @default(PENDING)
+  amount    Decimal       @db.Decimal(10, 2)
+  currency  String        @default("XAF")
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model Ticket {
+  id        String          @id @default(uuid())
+  user      User            @relation(fields: [userId], references: [id])
+  userId    String
+  subject   String
+  status    TicketStatus    @default(OPEN)
+  messages  TicketMessage[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+}
+
+model TicketMessage {
+  id        String   @id @default(uuid())
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  authorId  String
+  content   String
+  createdAt DateTime @default(now())
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(uuid())
+  name      String
+  userId    String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([name, createdAt])
+}
