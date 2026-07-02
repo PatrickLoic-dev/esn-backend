@@ -18,9 +18,9 @@ async function bootstrap() {
   app.enableCors();
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('Ecommerce API')
+    .setTitle('Easy Shop Network API')
     .setDescription(
-      'Ecommerce backend boilerplate — Supabase auth, products, orders, Notch Pay payments, SAV ticketing',
+      'Easy Shop Network (ESN) e-commerce backend — Supabase auth, products, orders, Notch Pay payments, SAV ticketing',
     )
     .setVersion('1.0')
     .addBearerAuth()
