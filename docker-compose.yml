@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: esn-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: esn
+      POSTGRES_PASSWORD: esn
+      POSTGRES_DB: easyshop
+    ports:
+      - "5433:5432"
+    volumes:
+      - esn_pgdata:/var/lib/postgresql/data
+
+volumes:
+  esn_pgdata:
