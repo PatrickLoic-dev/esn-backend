@@ -42,8 +42,10 @@ enum PaymentStatus {
 
 // id mirrors the Supabase Auth user id (auth.users.id)
 model User {
-  id        String          @id
+  id        String          @id @default(uuid())
   email     String          @unique
+  // Only set in local auth mode (AUTH_MODE=local); Supabase owns passwords otherwise
+  passwordHash String?
   firstName String?
   lastName  String?
   phone     String?
