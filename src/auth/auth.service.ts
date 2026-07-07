@@ -13,6 +13,7 @@ import { MailService } from '../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 const ACCESS_TTL = 60 * 60; // 1h
 const REFRESH_TTL = 60 * 60 * 24 * 7; // 7d
@@ -139,6 +140,26 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
     return this.toTokens(data.session);
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    if (!this.localMode) {
+      throw new BadRequestException(
+        'Password change is managed by Supabase in this mode',
+      );
+    }
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (
+      !user?.passwordHash ||
+      !(await bcrypt.compare(dto.currentPassword, user.passwordHash))
+    ) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: await bcrypt.hash(dto.newPassword, 10) },
+    });
+    return { success: true };
   }
 
   private issueTokens(userId: string, email: string) {

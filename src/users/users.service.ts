@@ -17,6 +17,14 @@ const PROFILE_SELECT = {
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
+  // Admin: list all users with their order counts
+  findAll() {
+    return this.prisma.user.findMany({
+      select: { ...PROFILE_SELECT, _count: { select: { orders: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
