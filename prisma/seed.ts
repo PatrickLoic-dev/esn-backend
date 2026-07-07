@@ -1,4 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Role } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -49,6 +50,19 @@ async function main() {
       await prisma.product.create({ data });
     }
   }
+
+  // Local-auth admin account for the admin panel (AUTH_MODE=local only)
+  await prisma.user.upsert({
+    where: { email: 'admin@esn.dev' },
+    update: { role: Role.ADMIN },
+    create: {
+      email: 'admin@esn.dev',
+      passwordHash: await bcrypt.hash('Admin123!', 10),
+      firstName: 'Admin',
+      lastName: 'User',
+      role: Role.ADMIN,
+    },
+  });
 
   console.log('Seed complete:', {
     categories: await prisma.category.count(),
