@@ -43,7 +43,8 @@ export class PaymentsService {
 
     const reference = `order_${order.id}_${randomUUID().slice(0, 8)}`;
     const init = await this.notchpay.initializePayment({
-      amount: order.total.toNumber(),
+      // XAF has no minor units — Notch Pay rejects fractional amounts
+      amount: Math.round(order.total.toNumber()),
       currency: 'XAF',
       email: user.email,
       phone: dto.phone,
