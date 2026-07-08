@@ -34,6 +34,27 @@ export class UsersController {
     return this.usersService.createUser(dto);
   }
 
+  @Roles(Role.ADMIN)
+  @Get('customers')
+  findCustomers() {
+    return this.usersService.findCustomers();
+  }
+
+  @Roles(Role.ADMIN)
+  @Get('customers/:id')
+  customerDetail(@Param('id') id: string) {
+    return this.usersService.getCustomerDetail(id);
+  }
+
+  @Roles(Role.ADMIN)
+  @Post('customers/:id/email')
+  emailCustomer(
+    @Param('id') id: string,
+    @Body() dto: { subject: string; message: string },
+  ) {
+    return this.usersService.emailCustomer(id, dto.subject, dto.message);
+  }
+
   // "me" routes must be declared before ":id" so they are not captured by it
   @Get('me')
   getProfile(@CurrentUser('sub') userId: string) {
