@@ -1,17 +1,27 @@
 import {
   ForbiddenException,
+  forwardRef,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Role, TicketStatus } from '@prisma/client';
+import { TicketStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { JwtPayload } from '../auth/decorators/current-user.decorator';
+import { isStaff } from '../auth/roles.util';
+import { SavGateway } from './sav.gateway';
 
 const MESSAGE_INCLUDE = {
   author: {
     select: { id: true, firstName: true, lastName: true, role: true },
+  },
+} as const;
+
+const TICKET_USER_INCLUDE = {
+  user: {
+    select: { id: true, email: true, firstName: true, lastName: true },
   },
 } as const;
 
@@ -20,6 +30,9 @@ export class SavService {
   constructor(
     private prisma: PrismaService,
     private mail: MailService,
+    // forwardRef breaks the SavService <-> SavGateway circular dependency
+    @Inject(forwardRef(() => SavGateway))
+    private gateway: SavGateway,
   ) {}
 
   async createTicket(user: JwtPayload, dto: CreateTicketDto) {
@@ -31,7 +44,7 @@ export class SavService {
           create: { authorId: user.sub, content: dto.message },
         },
       },
-      include: { messages: { include: MESSAGE_INCLUDE } },
+      include: { messages: { include: MESSAGE_INCLUDE }, ...TICKET_USER_INCLUDE },
     });
 
     void this.mail.send(
@@ -44,10 +57,13 @@ export class SavService {
   }
 
   findAllForUser(user: JwtPayload) {
-    const where = user.role === Role.ADMIN ? {} : { userId: user.sub };
+    const where = isStaff(user.role) ? {} : { userId: user.sub };
     return this.prisma.ticket.findMany({
       where,
-      include: { _count: { select: { messages: true } } },
+      include: {
+        _count: { select: { messages: true } },
+        ...TICKET_USER_INCLUDE,
+      },
       orderBy: { updatedAt: 'desc' },
     });
   }
@@ -60,6 +76,7 @@ export class SavService {
           include: MESSAGE_INCLUDE,
           orderBy: { createdAt: 'asc' },
         },
+        ...TICKET_USER_INCLUDE,
       },
     });
     if (!ticket) {
@@ -78,6 +95,12 @@ export class SavService {
     }
     this.assertCanAccess(ticket.userId, user);
 
+    // a staff reply moves the ticket from OPEN to IN_PROGRESS
+    const nextStatus =
+      isStaff(user.role) && ticket.status === TicketStatus.OPEN
+        ? TicketStatus.IN_PROGRESS
+        : ticket.status;
+
     const [message] = await this.prisma.$transaction([
       this.prisma.ticketMessage.create({
         data: { ticketId, authorId: user.sub, content },
@@ -85,15 +108,15 @@ export class SavService {
       }),
       this.prisma.ticket.update({
         where: { id: ticketId },
-        data: {
-          updatedAt: new Date(),
-          // an admin reply moves the ticket to IN_PROGRESS
-          ...(user.role === Role.ADMIN && ticket.status === TicketStatus.OPEN
-            ? { status: TicketStatus.IN_PROGRESS }
-            : {}),
-        },
+        data: { updatedAt: new Date(), status: nextStatus },
       }),
     ]);
+
+    // push to everyone watching this ticket, regardless of how they sent it
+    this.gateway.emitMessage(ticketId, message);
+    if (nextStatus !== ticket.status) {
+      this.gateway.emitStatus(ticketId, nextStatus);
+    }
     return message;
   }
 
@@ -102,11 +125,16 @@ export class SavService {
     if (!ticket) {
       throw new NotFoundException(`Ticket ${id} not found`);
     }
-    return this.prisma.ticket.update({ where: { id }, data: { status } });
+    const updated = await this.prisma.ticket.update({
+      where: { id },
+      data: { status },
+    });
+    this.gateway.emitStatus(id, status);
+    return updated;
   }
 
   assertCanAccess(ownerId: string, user: JwtPayload) {
-    if (user.role !== Role.ADMIN && ownerId !== user.sub) {
+    if (!isStaff(user.role) && ownerId !== user.sub) {
       throw new ForbiddenException();
     }
   }

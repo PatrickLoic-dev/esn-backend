@@ -5,17 +5,14 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  OrderStatus,
-  PaymentStatus,
-  Role,
-} from '@prisma/client';
+import { OrderStatus, PaymentStatus } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotchPayClient } from './notchpay.client';
 import { MailService } from '../mail/mail.service';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
 import { JwtPayload } from '../auth/decorators/current-user.decorator';
+import { isStaff } from '../auth/roles.util';
 
 @Injectable()
 export class PaymentsService {
@@ -114,7 +111,7 @@ export class PaymentsService {
   }
 
   findAllForUser(user: JwtPayload) {
-    const where = user.role === Role.ADMIN ? {} : { userId: user.sub };
+    const where = isStaff(user.role) ? {} : { userId: user.sub };
     return this.prisma.payment.findMany({
       where,
       orderBy: { createdAt: 'desc' },
