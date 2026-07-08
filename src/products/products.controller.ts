@@ -31,6 +31,13 @@ export class ProductsController {
     return this.productsService.findAll();
   }
 
+  // Admin listing includes drafts + rating/category info
+  @Roles(Role.ADMIN)
+  @Get('admin/all')
+  findAllForAdmin() {
+    return this.productsService.findAllForAdmin();
+  }
+
   @Public()
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
