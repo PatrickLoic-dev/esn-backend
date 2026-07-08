@@ -35,6 +35,13 @@ export class CategoriesService {
 
   async remove(id: string) {
     await this.findOne(id);
-    return this.prisma.category.delete({ where: { id } });
+    // detach products first so the FK doesn't block deletion
+    return this.prisma.$transaction(async (tx) => {
+      await tx.product.updateMany({
+        where: { categoryId: id },
+        data: { categoryId: null },
+      });
+      return tx.category.delete({ where: { id } });
+    });
   }
 }

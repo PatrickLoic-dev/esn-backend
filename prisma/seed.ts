@@ -4,11 +4,11 @@ import * as bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 const categories = [
-  { name: 'Electronics', slug: 'electronics', description: 'Phones, computers, audio, and gadgets' },
-  { name: 'Fashion', slug: 'fashion', description: 'Clothing, shoes, bags and accessories' },
-  { name: 'Home & Living', slug: 'home-living', description: 'Furniture, decor, and kitchen items' },
-  { name: 'Sports', slug: 'sports', description: 'Sports equipment and activewear' },
-  { name: 'Beauty', slug: 'beauty', description: 'Skincare, makeup, and fragrances' },
+  { name: 'Electronics', slug: 'electronics', description: 'Phones, computers, audio, and gadgets', color: 'Blue', isActive: true },
+  { name: 'Fashion', slug: 'fashion', description: 'Clothing, shoes, bags and accessories', color: 'Pink', isActive: true },
+  { name: 'Home & Living', slug: 'home-living', description: 'Furniture, decor, and kitchen items', color: 'Green', isActive: true },
+  { name: 'Sports', slug: 'sports', description: 'Sports equipment and activewear', color: 'Orange', isActive: true },
+  { name: 'Beauty', slug: 'beauty', description: 'Skincare, makeup, and fragrances', color: 'Purple', isActive: false },
 ];
 
 const products = [
@@ -31,7 +31,11 @@ async function main() {
   for (const c of categories) {
     await prisma.category.upsert({
       where: { slug: c.slug },
-      update: { description: c.description },
+      update: {
+        description: c.description,
+        color: c.color,
+        isActive: c.isActive,
+      },
       create: c,
     });
   }
