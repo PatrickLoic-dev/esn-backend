@@ -47,10 +47,18 @@ export class OrdersService {
         });
       }
 
+      const shippingCost = dto.shippingCost
+        ? new Prisma.Decimal(dto.shippingCost)
+        : new Prisma.Decimal(0);
+
       return tx.order.create({
         data: {
           userId,
-          total,
+          total: total.add(shippingCost),
+          shippingAddress: (dto.shippingAddress ??
+            undefined) as Prisma.InputJsonValue,
+          shippingMethod: dto.shippingMethod,
+          shippingCost,
           items: { create: items },
         },
         include: { items: true },
@@ -78,8 +86,15 @@ export class OrdersService {
       where: { id },
       include: {
         items: { include: { product: true } },
+        payments: { orderBy: { createdAt: 'desc' } },
         user: {
-          select: { id: true, email: true, firstName: true, lastName: true },
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+          },
         },
       },
     });

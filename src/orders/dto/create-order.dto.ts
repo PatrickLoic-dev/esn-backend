@@ -3,8 +3,12 @@ import {
   ArrayNotEmpty,
   IsArray,
   IsInt,
-  IsUUID,
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsString,
   Min,
+  IsUUID,
   ValidateNested,
 } from 'class-validator';
 
@@ -23,4 +27,18 @@ export class CreateOrderDto {
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)
   items: OrderItemDto[];
+
+  // { fullName, email, phone, address, city, postalCode, country }
+  @IsOptional()
+  @IsObject()
+  shippingAddress?: Record<string, string>;
+
+  @IsOptional()
+  @IsString()
+  shippingMethod?: string;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  shippingCost?: number;
 }

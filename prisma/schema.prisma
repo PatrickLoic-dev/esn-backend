@@ -119,6 +119,14 @@ model Order {
   userId    String
   status    OrderStatus @default(PENDING)
   total     Decimal     @db.Decimal(10, 2)
+  // captured at checkout: { fullName, email, phone, address, city, postalCode, country }
+  shippingAddress Json?
+  shippingMethod  String?
+  shippingCost    Decimal? @db.Decimal(10, 2)
+  // set by admin when fulfilling
+  trackingNumber  String?
+  carrier         String?
+  notes           String?
   items     OrderItem[]
   payments  Payment[]
   createdAt DateTime    @default(now())
