@@ -12,7 +12,7 @@ import { Role } from '@prisma/client';
 import { SavService } from './sav.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
-import { UpdateTicketStatusDto } from './dto/update-ticket-status.dto';
+import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { JwtPayload } from '../auth/decorators/current-user.decorator';
@@ -51,11 +51,11 @@ export class SavController {
   }
 
   @Roles(Role.ADMIN)
-  @Patch(':id/status')
-  updateStatus(
+  @Patch(':id')
+  update(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateTicketStatusDto,
+    @Body() dto: UpdateTicketDto,
   ) {
-    return this.savService.updateStatus(id, dto.status);
+    return this.savService.update(id, dto);
   }
 }

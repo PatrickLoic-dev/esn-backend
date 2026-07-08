@@ -137,11 +137,89 @@ async function main() {
     },
   });
 
+  // Support tickets matching the SAV frame
+  const admin = await prisma.user.findUnique({
+    where: { email: 'admin@esn.dev' },
+  });
+  const byEmail = (e: string) => allCustomers.find((c) => c.email === e);
+  const ticketSeed = [
+    {
+      subject: 'Order not delivered after 10 days',
+      email: 'john.doe@example.com',
+      priority: 'HIGH' as const,
+      category: 'Delivery',
+      status: 'IN_PROGRESS' as const,
+      messages: [
+        { from: 'customer', text: "Hello, I placed order ORD-2026-001 over 10 days ago and it hasn't arrived. Can you investigate?" },
+        { from: 'agent', text: "Hi John! I'm sorry about the delay. I've escalated this to our logistics team. You should get an update within 24 hours." },
+        { from: 'customer', text: "Thank you, I'll wait." },
+      ],
+    },
+    {
+      subject: 'Wrong item received in my package',
+      email: 'john.doe@example.com',
+      priority: 'URGENT' as const,
+      category: 'Order Issue',
+      status: 'OPEN' as const,
+      messages: [
+        { from: 'customer', text: 'I ordered a Designer Watch but received running shoes instead. Please help.' },
+      ],
+    },
+    {
+      subject: 'Payment charged twice',
+      email: 'jane.smith@example.com',
+      priority: 'URGENT' as const,
+      category: 'Payment',
+      status: 'RESOLVED' as const,
+      messages: [
+        { from: 'customer', text: 'I was charged twice for the same order.' },
+        { from: 'agent', text: 'We have refunded the duplicate charge. It should appear within 3-5 business days.' },
+        { from: 'customer', text: 'Confirmed, thank you!' },
+      ],
+    },
+    {
+      subject: 'How do I return a product?',
+      email: 'bob.johnson@example.com',
+      priority: 'LOW' as const,
+      category: 'Return',
+      status: 'OPEN' as const,
+      messages: [
+        { from: 'customer', text: 'What is the process to return an item I no longer need?' },
+      ],
+    },
+  ];
+
+  for (const t of ticketSeed) {
+    const owner = byEmail(t.email);
+    if (!owner) continue;
+    const existing = await prisma.ticket.findFirst({
+      where: { subject: t.subject, userId: owner.id },
+    });
+    if (existing) continue;
+    await prisma.ticket.create({
+      data: {
+        userId: owner.id,
+        subject: t.subject,
+        priority: t.priority,
+        category: t.category,
+        status: t.status,
+        assigneeId: t.status !== 'OPEN' ? admin?.id : undefined,
+        messages: {
+          create: t.messages.map((m) => ({
+            authorId: m.from === 'agent' ? (admin?.id ?? owner.id) : owner.id,
+            content: m.text,
+          })),
+        },
+      },
+    });
+  }
+
   console.log('Seed complete:', {
     categories: await prisma.category.count(),
     products: await prisma.product.count(),
     customers: await prisma.user.count({ where: { role: Role.CUSTOMER } }),
     reviews: await prisma.review.count(),
+    tickets: await prisma.ticket.count(),
   });
 }
 
