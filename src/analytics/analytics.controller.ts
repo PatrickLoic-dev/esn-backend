@@ -34,4 +34,11 @@ export class AnalyticsController {
   dashboard() {
     return this.analyticsService.dashboard();
   }
+
+  @ApiBearerAuth()
+  @Roles(Role.ADMIN)
+  @Get('overview')
+  overview() {
+    return this.analyticsService.adminOverview();
+  }
 }
