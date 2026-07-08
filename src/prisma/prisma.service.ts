@@ -9,9 +9,16 @@ import { PrismaClient } from '@prisma/client';
 function normalizePoolerUrl(url: string | undefined): string | undefined {
   if (!url) return url;
   const isPooler = url.includes('pooler.supabase.com:6543');
-  if (!isPooler || url.includes('pgbouncer=true')) return url;
+  if (!isPooler) return url;
+  const params: string[] = [];
+  if (!url.includes('pgbouncer=true')) params.push('pgbouncer=true');
+  // resilience against the pooler dropping idle connections
+  if (!url.includes('connection_limit=')) params.push('connection_limit=5');
+  if (!url.includes('pool_timeout=')) params.push('pool_timeout=20');
+  if (!url.includes('connect_timeout=')) params.push('connect_timeout=15');
+  if (params.length === 0) return url;
   const sep = url.includes('?') ? '&' : '?';
-  return `${url}${sep}pgbouncer=true`;
+  return `${url}${sep}${params.join('&')}`;
 }
 
 @Injectable()
