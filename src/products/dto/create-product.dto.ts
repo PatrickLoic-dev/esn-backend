@@ -37,6 +37,10 @@ export class CreateProductDto {
   imageUrl?: string;
 
   @IsOptional()
+  @IsString()
+  categoryId?: string;
+
+  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 }
