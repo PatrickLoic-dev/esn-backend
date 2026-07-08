@@ -12,12 +12,19 @@ const categories = [
 ];
 
 const products = [
-  { name: 'Premium Wireless Headphones', price: 299.99, stock: 45, category: 'electronics', imageUrl: '/images/product-1.png', description: 'Active noise cancellation, 30-hour battery life.' },
-  { name: 'Designer Watch Collection', price: 549.99, stock: 12, category: 'fashion', imageUrl: '/images/product-2.png', description: 'Elegant designer watch.' },
-  { name: 'Athletic Sneakers Pro', price: 159.99, stock: 80, category: 'sports', imageUrl: '/images/product-3.png', description: 'Lightweight running shoes.' },
-  { name: 'Professional Camera Kit', price: 1299.99, stock: 8, category: 'electronics', imageUrl: '/images/product-4.png', description: 'Full-frame camera kit.' },
-  { name: 'Gaming Mouse', price: 59.99, stock: 120, category: 'electronics', imageUrl: '/images/product-1.png', description: 'High-DPI gaming mouse.' },
-  { name: 'Mechanical Keyboard', price: 149.99, stock: 5, category: 'electronics', imageUrl: '/images/product-2.png', description: 'Hot-swappable mechanical keyboard.' },
+  { name: 'Premium Wireless Headphones', price: 299.99, comparePrice: 399.99, sku: 'ELEC-001', stock: 45, category: 'electronics', imageUrl: '/images/product-1.png', description: 'Active noise cancellation, 30-hour battery life.' },
+  { name: 'Designer Watch Collection', price: 549.99, comparePrice: 649.99, sku: 'FASH-001', stock: 12, category: 'fashion', imageUrl: '/images/product-2.png', description: 'Elegant designer watch.' },
+  { name: 'Athletic Sneakers Pro', price: 159.99, comparePrice: 199.99, sku: 'SPRT-001', stock: 80, category: 'sports', imageUrl: '/images/product-3.png', description: 'Lightweight running shoes.' },
+  { name: 'Professional Camera Kit', price: 1299.99, sku: 'ELEC-002', stock: 8, category: 'electronics', imageUrl: '/images/product-4.png', description: 'Full-frame camera kit.' },
+  { name: 'Gaming Mouse', price: 59.99, sku: 'ELEC-003', stock: 120, category: 'electronics', imageUrl: '/images/product-1.png', description: 'High-DPI gaming mouse.' },
+  { name: 'Mechanical Keyboard', price: 149.99, sku: 'ELEC-004', stock: 5, category: 'electronics', imageUrl: '/images/product-2.png', description: 'Hot-swappable mechanical keyboard.' },
+];
+
+// Sample shoppers so the admin has real customers + reviews to display
+const customers = [
+  { email: 'john.doe@example.com', firstName: 'John', lastName: 'Doe' },
+  { email: 'jane.smith@example.com', firstName: 'Jane', lastName: 'Smith' },
+  { email: 'bob.johnson@example.com', firstName: 'Bob', lastName: 'Johnson' },
 ];
 
 async function main() {
@@ -40,6 +47,8 @@ async function main() {
       name: p.name,
       description: p.description,
       price: p.price,
+      comparePrice: p.comparePrice ?? null,
+      sku: p.sku ?? null,
       stock: p.stock,
       imageUrl: p.imageUrl,
       categoryId: category?.id,
@@ -48,6 +57,52 @@ async function main() {
       await prisma.product.update({ where: { id: existing.id }, data });
     } else {
       await prisma.product.create({ data });
+    }
+  }
+
+  // Sample customers
+  for (const c of customers) {
+    await prisma.user.upsert({
+      where: { email: c.email },
+      update: {},
+      create: {
+        email: c.email,
+        firstName: c.firstName,
+        lastName: c.lastName,
+        passwordHash: await bcrypt.hash('Password123!', 10),
+        role: Role.CUSTOMER,
+      },
+    });
+  }
+
+  // Reviews (drive the product ratings + the Reviews analytics tab)
+  const allCustomers = await prisma.user.findMany({
+    where: { role: Role.CUSTOMER },
+  });
+  const allProducts = await prisma.product.findMany();
+  const reviewPlan: Record<string, number[]> = {
+    'Premium Wireless Headphones': [5, 4, 5],
+    'Designer Watch Collection': [4, 4],
+    'Athletic Sneakers Pro': [5, 3, 4],
+    'Professional Camera Kit': [5],
+    'Gaming Mouse': [4, 5],
+  };
+  for (const prod of allProducts) {
+    const ratings = reviewPlan[prod.name];
+    if (!ratings) continue;
+    for (let i = 0; i < ratings.length && i < allCustomers.length; i++) {
+      await prisma.review.upsert({
+        where: {
+          productId_userId: { productId: prod.id, userId: allCustomers[i].id },
+        },
+        update: { rating: ratings[i] },
+        create: {
+          productId: prod.id,
+          userId: allCustomers[i].id,
+          rating: ratings[i],
+          comment: 'Great product, would recommend!',
+        },
+      });
     }
   }
 
@@ -81,6 +136,8 @@ async function main() {
   console.log('Seed complete:', {
     categories: await prisma.category.count(),
     products: await prisma.product.count(),
+    customers: await prisma.user.count({ where: { role: Role.CUSTOMER } }),
+    reviews: await prisma.review.count(),
   });
 }
 
