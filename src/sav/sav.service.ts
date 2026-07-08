@@ -9,6 +9,7 @@ import { TicketStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
+import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { JwtPayload } from '../auth/decorators/current-user.decorator';
 import { isStaff } from '../auth/roles.util';
 import { SavGateway } from './sav.gateway';
@@ -19,10 +20,12 @@ const MESSAGE_INCLUDE = {
   },
 } as const;
 
-const TICKET_USER_INCLUDE = {
+const TICKET_META_INCLUDE = {
   user: {
     select: { id: true, email: true, firstName: true, lastName: true },
   },
+  assignee: { select: { id: true, firstName: true, lastName: true } },
+  order: { select: { id: true } },
 } as const;
 
 @Injectable()
@@ -40,11 +43,14 @@ export class SavService {
       data: {
         userId: user.sub,
         subject: dto.subject,
+        priority: dto.priority,
+        category: dto.category,
+        orderId: dto.orderId,
         messages: {
           create: { authorId: user.sub, content: dto.message },
         },
       },
-      include: { messages: { include: MESSAGE_INCLUDE }, ...TICKET_USER_INCLUDE },
+      include: { messages: { include: MESSAGE_INCLUDE }, ...TICKET_META_INCLUDE },
     });
 
     void this.mail.send(
@@ -62,7 +68,7 @@ export class SavService {
       where,
       include: {
         _count: { select: { messages: true } },
-        ...TICKET_USER_INCLUDE,
+        ...TICKET_META_INCLUDE,
       },
       orderBy: { updatedAt: 'desc' },
     });
@@ -76,7 +82,7 @@ export class SavService {
           include: MESSAGE_INCLUDE,
           orderBy: { createdAt: 'asc' },
         },
-        ...TICKET_USER_INCLUDE,
+        ...TICKET_META_INCLUDE,
       },
     });
     if (!ticket) {
@@ -120,16 +126,27 @@ export class SavService {
     return message;
   }
 
-  async updateStatus(id: string, status: TicketStatus) {
+  // Admin: update status / priority / category / assignee
+  async update(id: string, dto: UpdateTicketDto) {
     const ticket = await this.prisma.ticket.findUnique({ where: { id } });
     if (!ticket) {
       throw new NotFoundException(`Ticket ${id} not found`);
     }
     const updated = await this.prisma.ticket.update({
       where: { id },
-      data: { status },
+      data: {
+        ...(dto.status ? { status: dto.status } : {}),
+        ...(dto.priority ? { priority: dto.priority } : {}),
+        ...(dto.category === undefined ? {} : { category: dto.category }),
+        ...(dto.assigneeId === undefined
+          ? {}
+          : { assigneeId: dto.assigneeId }),
+      },
+      include: TICKET_META_INCLUDE,
     });
-    this.gateway.emitStatus(id, status);
+    if (dto.status) {
+      this.gateway.emitStatus(id, dto.status);
+    }
     return updated;
   }
 

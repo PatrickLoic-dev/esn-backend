@@ -31,6 +31,13 @@ enum TicketStatus {
   CLOSED
 }
 
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
 enum PaymentMethod {
   MOBILE_MONEY
   CARD
@@ -59,7 +66,8 @@ model User {
   isActive    Boolean   @default(true)
   lastLoginAt DateTime?
   orders    Order[]
-  tickets   Ticket[]
+  tickets   Ticket[]        @relation("TicketOwner")
+  assignedTickets Ticket[]  @relation("TicketAssignee")
   messages  TicketMessage[]
   payments  Payment[]
   reviews   Review[]
@@ -129,6 +137,7 @@ model Order {
   notes           String?
   items     OrderItem[]
   payments  Payment[]
+  tickets   Ticket[]
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 }
@@ -159,14 +168,25 @@ model Payment {
 }
 
 model Ticket {
-  id        String          @id @default(uuid())
-  user      User            @relation(fields: [userId], references: [id])
-  userId    String
-  subject   String
-  status    TicketStatus    @default(OPEN)
-  messages  TicketMessage[]
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  id         String          @id @default(uuid())
+  // human-friendly reference shown as TKT-001
+  number     Int             @unique @default(autoincrement())
+  user       User            @relation("TicketOwner", fields: [userId], references: [id])
+  userId     String
+  subject    String
+  status     TicketStatus    @default(OPEN)
+  priority   TicketPriority  @default(NORMAL)
+  // e.g. Delivery, Order Issue, Payment, Return, General
+  category   String?
+  // optional link to the order the ticket is about
+  order      Order?          @relation(fields: [orderId], references: [id])
+  orderId    String?
+  // staff member handling the ticket
+  assignee   User?           @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  assigneeId String?
+  messages   TicketMessage[]
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
 }
 
 model TicketMessage {
