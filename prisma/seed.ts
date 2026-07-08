@@ -12,7 +12,7 @@ const categories = [
 ];
 
 const products = [
-  { name: 'Premium Wireless Headphones', price: 299.99, comparePrice: 399.99, sku: 'ELEC-001', stock: 45, category: 'electronics', imageUrl: '/images/product-1.png', description: 'Active noise cancellation, 30-hour battery life.' },
+  { name: 'Premium Wireless Headphones', price: 299.99, comparePrice: 399.99, sku: 'ELEC-001', stock: 45, category: 'electronics', imageUrl: '/images/product-1.png', description: '## Studio-grade sound\nExperience **exceptional audio quality** with powerful bass and crystal-clear highs.\n\n### Key features\n- Active noise cancellation\n- Up to *30 hours* of battery life\n- Quick charging & foldable design\n- Premium memory-foam ear cushions\n\nPerfect for long commutes or travel. Includes a hard carrying case.' },
   { name: 'Designer Watch Collection', price: 549.99, comparePrice: 649.99, sku: 'FASH-001', stock: 12, category: 'fashion', imageUrl: '/images/product-2.png', description: 'Elegant designer watch.' },
   { name: 'Athletic Sneakers Pro', price: 159.99, comparePrice: 199.99, sku: 'SPRT-001', stock: 80, category: 'sports', imageUrl: '/images/product-3.png', description: 'Lightweight running shoes.' },
   { name: 'Professional Camera Kit', price: 1299.99, sku: 'ELEC-002', stock: 8, category: 'electronics', imageUrl: '/images/product-4.png', description: 'Full-frame camera kit.' },
