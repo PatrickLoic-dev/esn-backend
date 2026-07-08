@@ -10,7 +10,10 @@ datasource db {
 
 enum Role {
   CUSTOMER
+  SUPER_ADMIN
   ADMIN
+  MODERATOR
+  SUPPORT
 }
 
 enum OrderStatus {
@@ -51,6 +54,10 @@ model User {
   phone     String?
   avatarUrl String?
   role      Role            @default(CUSTOMER)
+  // Per-module admin permissions: { [module]: { view, create, edit, delete } }
+  permissions Json?
+  isActive    Boolean   @default(true)
+  lastLoginAt DateTime?
   orders    Order[]
   tickets   Ticket[]
   messages  TicketMessage[]

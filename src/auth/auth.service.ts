@@ -107,6 +107,13 @@ export class AuthService {
       ) {
         throw new UnauthorizedException('Invalid credentials');
       }
+      if (!user.isActive) {
+        throw new UnauthorizedException('This account has been deactivated');
+      }
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      });
       return this.issueTokens(user.id, user.email);
     }
 

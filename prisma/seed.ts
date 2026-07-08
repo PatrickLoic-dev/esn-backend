@@ -52,15 +52,29 @@ async function main() {
   }
 
   // Local-auth admin account for the admin panel (AUTH_MODE=local only)
+  const fullAccess = Object.fromEntries(
+    [
+      'dashboard',
+      'products',
+      'categories',
+      'orders',
+      'customers',
+      'sav',
+      'analytics',
+      'users',
+    ].map((m) => [m, { view: true, create: true, edit: true, delete: true }]),
+  );
+
   await prisma.user.upsert({
     where: { email: 'admin@esn.dev' },
-    update: { role: Role.ADMIN },
+    update: { role: Role.SUPER_ADMIN, permissions: fullAccess },
     create: {
       email: 'admin@esn.dev',
       passwordHash: await bcrypt.hash('Admin123!', 10),
       firstName: 'Admin',
       lastName: 'User',
-      role: Role.ADMIN,
+      role: Role.SUPER_ADMIN,
+      permissions: fullAccess,
     },
   });
 
