@@ -4,10 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { OrderStatus, Prisma, Role } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { JwtPayload } from '../auth/decorators/current-user.decorator';
+import { isStaff } from '../auth/roles.util';
 
 @Injectable()
 export class OrdersService {
@@ -58,10 +59,16 @@ export class OrdersService {
   }
 
   findAllForUser(user: JwtPayload) {
-    const where = user.role === Role.ADMIN ? {} : { userId: user.sub };
+    const where = isStaff(user.role) ? {} : { userId: user.sub };
     return this.prisma.order.findMany({
       where,
-      include: { items: { include: { product: true } } },
+      include: {
+        items: { include: { product: true } },
+        // staff order lists need the customer's identity
+        user: {
+          select: { id: true, email: true, firstName: true, lastName: true },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -69,12 +76,17 @@ export class OrdersService {
   async findOne(id: string, user: JwtPayload) {
     const order = await this.prisma.order.findUnique({
       where: { id },
-      include: { items: { include: { product: true } } },
+      include: {
+        items: { include: { product: true } },
+        user: {
+          select: { id: true, email: true, firstName: true, lastName: true },
+        },
+      },
     });
     if (!order) {
       throw new NotFoundException(`Order ${id} not found`);
     }
-    if (user.role !== Role.ADMIN && order.userId !== user.sub) {
+    if (!isStaff(user.role) && order.userId !== user.sub) {
       throw new ForbiddenException();
     }
     return order;
