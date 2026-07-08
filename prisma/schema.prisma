@@ -85,6 +85,9 @@ model Category {
   name        String    @unique
   slug        String    @unique
   description String?
+  // color tag shown on the storefront/admin (Red|Blue|Green|Purple|Orange|Pink)
+  color       String    @default("Red")
+  isActive    Boolean   @default(true)
   products    Product[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
