@@ -45,4 +45,10 @@ export class OrdersController {
   ) {
     return this.ordersService.updateStatus(id, dto.status);
   }
+
+  @Roles(Role.ADMIN)
+  @Post(':id/notify')
+  notify(@Param('id', ParseUUIDPipe) id: string) {
+    return this.ordersService.notifyCustomer(id);
+  }
 }
