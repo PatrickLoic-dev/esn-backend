@@ -6,13 +6,25 @@ import {
 } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { JwtPayload } from '../auth/decorators/current-user.decorator';
 import { isStaff } from '../auth/roles.util';
 
+const STATUS_MESSAGE: Record<OrderStatus, string> = {
+  PENDING: 'has been received and is awaiting payment',
+  PAID: 'has been paid and is now being prepared',
+  SHIPPED: 'has been shipped and is on its way',
+  DELIVERED: 'has been delivered — enjoy!',
+  CANCELLED: 'has been cancelled',
+};
+
 @Injectable()
 export class OrdersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private mail: MailService,
+  ) {}
 
   async create(userId: string, dto: CreateOrderDto) {
     return this.prisma.$transaction(async (tx) => {
@@ -113,5 +125,25 @@ export class OrdersService {
       throw new NotFoundException(`Order ${id} not found`);
     }
     return this.prisma.order.update({ where: { id }, data: { status } });
+  }
+
+  // Admin: email the customer their current order status
+  async notifyCustomer(id: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id },
+      include: { user: { select: { email: true, firstName: true } } },
+    });
+    if (!order) {
+      throw new NotFoundException(`Order ${id} not found`);
+    }
+    const ref = order.id.slice(0, 8).toUpperCase();
+    await this.mail.send(
+      order.user.email,
+      `Update on your order ${ref}`,
+      `<p>Hi ${order.user.firstName ?? ''},</p>
+       <p>Your order <b>${ref}</b> ${STATUS_MESSAGE[order.status]}.</p>
+       <p>Thank you for shopping with Easy Shop Network.</p>`,
+    );
+    return { sent: true };
   }
 }
