@@ -13,6 +13,7 @@ import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
 import { SavModule } from './sav/sav.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { HealthModule } from './health/health.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
@@ -43,6 +44,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     PaymentsModule,
     SavModule,
     AnalyticsModule,
+    HealthModule,
   ],
   providers: [
     // All routes require a valid Supabase JWT unless marked @Public()

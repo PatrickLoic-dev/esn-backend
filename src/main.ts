@@ -28,6 +28,12 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, document);
 
-  await app.listen(process.env.PORT ?? 3000);
+  // Arrêt gracieux : déclenche les hooks onModuleDestroy (fermeture propre du
+  // pool Prisma) quand le conteneur reçoit SIGTERM/SIGINT.
+  app.enableShutdownHooks();
+
+  // 0.0.0.0 est indispensable en conteneur : sinon le serveur n'écoute que sur
+  // la boucle locale et n'est pas joignable depuis l'extérieur du conteneur.
+  await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
 }
 void bootstrap();

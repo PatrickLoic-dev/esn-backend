@@ -1,6 +1,37 @@
+# Ne jamais envoyer ces éléments dans le contexte de build Docker :
+# ils alourdissent l'image, cassent le cache ou exposent des secrets.
+
+# Dépendances et artefacts régénérés dans l'image
 node_modules
 dist
+.prisma
+
+# Secrets et variables d'environnement (le .env.example reste autorisé)
 .env
 .env.*
 !.env.example
+
+# Git et métadonnées
+.git
+.gitignore
+
+# Logs et fichiers temporaires
 *.log
+npm-debug.log*
+
+# Tests et couverture
+coverage
+test
+
+# Éditeurs / OS
+.vscode
+.idea
+.DS_Store
+
+# Docker lui-même (inutile dans le contexte)
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+README.md

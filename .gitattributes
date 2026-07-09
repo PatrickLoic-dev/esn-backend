@@ -1,0 +1,4 @@
+# Force les scripts shell en fins de ligne LF : un CRLF casserait le shebang
+# (#!/bin/sh) dans l'image Alpine du conteneur.
+*.sh text eol=lf
+docker-entrypoint.sh text eol=lf

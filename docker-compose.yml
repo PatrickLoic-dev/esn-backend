@@ -1,4 +1,22 @@
+# ============================================================================
+#  Easy Shop Network — Backend
+#  docker-compose de référence (dev complet ou déploiement mono-machine).
+#
+#  Usages :
+#   • DB seule (dev local, l'API tournant via npm) :
+#       docker compose up -d db
+#   • Pile complète (API + Postgres) :
+#       docker compose --profile full up -d --build
+#
+#  En production managée (Supabase), on ne lance PAS le service "db" : il
+#  suffit de pointer DATABASE_URL/DIRECT_URL du .env vers Supabase et de
+#  démarrer uniquement le service "api".
+# ============================================================================
+
 services:
+  # --------------------------------------------------------------------------
+  # Base de données Postgres (dev / mono-machine). En prod Supabase : ignorée.
+  # --------------------------------------------------------------------------
   db:
     image: postgres:16-alpine
     container_name: esn-postgres
@@ -8,9 +26,47 @@ services:
       POSTGRES_PASSWORD: esn
       POSTGRES_DB: easyshop
     ports:
+      # Exposé sur 5433 côté hôte pour ne pas entrer en conflit avec un
+      # Postgres local déjà installé sur 5432.
       - "5433:5432"
     volumes:
       - esn_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # L'API n'attend le "healthy" que si pg_isready répond.
+      test: ["CMD-SHELL", "pg_isready -U esn -d easyshop"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --------------------------------------------------------------------------
+  # API NestJS. Placée derrière le profil "full" pour ne se lancer qu'à la
+  # demande (le dev quotidien utilise `npm run start:dev`).
+  # --------------------------------------------------------------------------
+  api:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: esn-api
+    restart: unless-stopped
+    # Charge toutes les variables (Supabase, Notch Pay, Resend, JWT…).
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # Applique le schéma au démarrage (adapté à ce projet en db push).
+      # Mettre à "false" si les migrations sont gérées par la CI.
+      DB_PUSH_ON_START: "true"
+      # Surcharge la connexion pour viser le service "db" du réseau compose.
+      # À COMMENTER si l'on utilise Supabase (les valeurs du .env priment alors).
+      DATABASE_URL: "postgresql://esn:esn@db:5432/easyshop"
+      DIRECT_URL: "postgresql://esn:esn@db:5432/easyshop"
+    ports:
+      - "3001:3000"
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   esn_pgdata:
