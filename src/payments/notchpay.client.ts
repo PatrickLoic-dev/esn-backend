@@ -1,4 +1,8 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 export interface NotchPayInitResponse {
@@ -12,12 +16,14 @@ export interface NotchPayInitResponse {
 @Injectable()
 export class NotchPayClient {
   private readonly baseUrl = 'https://api.notchpay.co';
-  private readonly publicKey: string;
-  private readonly callbackUrl: string;
+  // Optionnels : si absents, l'initiation d'un paiement renvoie un 503 clair
+  // au lieu de faire planter le démarrage de toute l'API.
+  private readonly publicKey: string | undefined;
+  private readonly callbackUrl: string | undefined;
 
   constructor(config: ConfigService) {
-    this.publicKey = config.getOrThrow<string>('NOTCHPAY_PUBLIC_KEY');
-    this.callbackUrl = config.getOrThrow<string>('NOTCHPAY_CALLBACK_URL');
+    this.publicKey = config.get<string>('NOTCHPAY_PUBLIC_KEY');
+    this.callbackUrl = config.get<string>('NOTCHPAY_CALLBACK_URL');
   }
 
   async initializePayment(params: {
@@ -28,6 +34,11 @@ export class NotchPayClient {
     reference: string;
     description: string;
   }): Promise<NotchPayInitResponse> {
+    if (!this.publicKey || !this.callbackUrl) {
+      throw new ServiceUnavailableException(
+        "Les paiements Notch Pay ne sont pas configurés sur ce serveur.",
+      );
+    }
     const res = await fetch(`${this.baseUrl}/payments/initialize`, {
       method: 'POST',
       headers: {
