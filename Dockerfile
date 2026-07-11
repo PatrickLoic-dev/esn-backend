@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # ============================================================================
 #  Easy Shop Network — Backend (NestJS + Prisma)
 #  Image de production multi-étapes, optimisée pour la taille et la sécurité.
@@ -18,8 +16,12 @@ WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma
 
-# npm ci = installation reproductible depuis package-lock.json.
-RUN npm ci
+# On utilise `npm install` plutôt que `npm ci` : certaines dépendances
+# optionnelles sont spécifiques à la plateforme (ex. @emnapi/* ciblant
+# Linux/WASM) et un lockfile généré sous un autre OS (Windows) fait échouer
+# `npm ci` sous Alpine ("Missing ... from lock file"). `npm install` résout
+# ici les binaires corrects pour l'image Linux.
+RUN npm install --no-audit --no-fund
 
 # ----------------------------------------------------------------------------
 # Étape 2 — "build" : compile le TypeScript en JavaScript (dossier dist/).
@@ -48,14 +50,19 @@ ENV PORT=3000
 # pour un arrêt propre, et évite les processus zombies.
 RUN apk add --no-cache tini
 
-# Installe uniquement les dépendances de production.
 COPY package*.json ./
 COPY prisma ./prisma
-RUN npm ci --omit=dev && npm cache clean --force
 
-# Régénère le client Prisma dans l'image finale (le binaire d'engine dépend
-# de la plateforme, on le régénère ici plutôt que de le copier).
-RUN npx prisma generate
+# On réutilise les node_modules déjà résolus (bons binaires Linux) à l'étape
+# "deps" plutôt que de refaire un `npm install` (évite un second accès réseau,
+# source de lenteur et d'échecs transitoires). Séquence :
+#   1) prisma generate : crée le client (le CLI prisma est encore présent) ;
+#   2) npm prune --omit=dev : retire les devDependencies HORS LIGNE ;
+#   3) nettoyage du cache npm.
+COPY --from=deps /app/node_modules ./node_modules
+RUN npx prisma generate \
+  && npm prune --omit=dev --no-audit --no-fund \
+  && npm cache clean --force
 
 # Récupère uniquement le résultat de compilation depuis l'étape build.
 COPY --from=build /app/dist ./dist
@@ -78,5 +85,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
       "http://127.0.0.1:${PORT}/api/health/ready" || exit 1
 
 # tini comme PID 1, puis notre entrypoint, puis le serveur.
+# Nest imbrique la sortie sous dist/src/ (présence du dossier prisma/ à la
+# racine), l'entrée compilée est donc dist/src/main.js.
 ENTRYPOINT ["/sbin/tini", "--", "./docker-entrypoint.sh"]
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/src/main.js"]

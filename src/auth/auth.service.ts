@@ -1,10 +1,11 @@
 import {
   BadRequestException,
   Injectable,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Session } from '@supabase/supabase-js';
+import { Session, SupabaseClient } from '@supabase/supabase-js';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 import { PrismaService } from '../prisma/prisma.service';
@@ -61,7 +62,7 @@ export class AuthService {
       return { userId: user.id, ...this.issueTokens(user.id, user.email) };
     }
 
-    const { data, error } = await this.supabase.client.auth.signUp({
+    const { data, error } = await this.requireSupabase().auth.signUp({
       email: dto.email,
       password: dto.password,
     });
@@ -118,7 +119,7 @@ export class AuthService {
     }
 
     const { data, error } =
-      await this.supabase.client.auth.signInWithPassword({
+      await this.requireSupabase().auth.signInWithPassword({
         email: dto.email,
         password: dto.password,
       });
@@ -140,7 +141,7 @@ export class AuthService {
       }
     }
 
-    const { data, error } = await this.supabase.client.auth.refreshSession({
+    const { data, error } = await this.requireSupabase().auth.refreshSession({
       refresh_token: dto.refreshToken,
     });
     if (error || !data.session) {
@@ -167,6 +168,18 @@ export class AuthService {
       data: { passwordHash: await bcrypt.hash(dto.newPassword, 10) },
     });
     return { success: true };
+  }
+
+  // Accès sûr au client Supabase (mode d'auth Supabase uniquement) : renvoie
+  // une erreur 503 explicite si Supabase n'est pas configuré plutôt que de
+  // planter sur un accès à null.
+  private requireSupabase(): SupabaseClient {
+    if (!this.supabase.client) {
+      throw new ServiceUnavailableException(
+        "L'authentification Supabase n'est pas configurée sur ce serveur.",
+      );
+    }
+    return this.supabase.client;
   }
 
   private issueTokens(userId: string, email: string) {

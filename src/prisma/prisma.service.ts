@@ -1,4 +1,9 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
 // Supabase's pooled connection (port 6543) runs PgBouncer in transaction mode.
@@ -32,8 +37,24 @@ export class PrismaService
     });
   }
 
+  private readonly logger = new Logger(PrismaService.name);
+
   async onModuleInit() {
-    await this.$connect();
+    // Connexion NON bloquante au démarrage : si la base est momentanément
+    // injoignable (pooler Supabase, réseau…), l'application démarre quand même.
+    // La liveness (/api/health) répond, la readiness (/api/health/ready) reste
+    // en 503 jusqu'à ce que la base soit joignable. Prisma se (re)connectera
+    // paresseusement à la première requête réussie. Cela évite un crash-loop
+    // du conteneur au boot.
+    try {
+      await this.$connect();
+    } catch (err) {
+      this.logger.error(
+        `Connexion initiale à la base impossible, démarrage quand même : ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   async onModuleDestroy() {
