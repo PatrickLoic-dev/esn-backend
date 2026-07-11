@@ -60,6 +60,11 @@ model User {
   lastName  String?
   phone     String?
   avatarUrl String?
+  // Adresse par défaut du client (préremplit le checkout)
+  address    String?
+  city       String?
+  postalCode String?
+  country    String?
   role      Role            @default(CUSTOMER)
   // Per-module admin permissions: { [module]: { view, create, edit, delete } }
   permissions Json?

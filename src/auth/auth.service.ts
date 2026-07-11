@@ -115,6 +115,19 @@ export class AuthService {
         where: { id: user.id },
         data: { lastLoginAt: new Date() },
       });
+      // Notification de sécurité : email à chaque connexion
+      const when = new Date().toLocaleString('fr-FR');
+      void this.mail
+        .send(
+          user.email,
+          'Nouvelle connexion à votre compte Easy Shop Network',
+          `<p>Bonjour ${user.firstName ?? ''},</p>
+           <p>Une connexion à votre compte vient d'avoir lieu le ${when}.</p>
+           <p>Si vous n'êtes pas à l'origine de cette connexion, changez votre
+           mot de passe immédiatement.</p>
+           <p>— Easy Shop Network</p>`,
+        )
+        .catch(() => undefined);
       return this.issueTokens(user.id, user.email);
     }
 
