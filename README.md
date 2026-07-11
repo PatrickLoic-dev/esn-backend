@@ -1,368 +1,326 @@
 # Easy Shop Network — Backend
 
-REST + WebSocket API for **Easy Shop Network (ESN)**, an e-commerce platform
-(storefront + admin panel). Built with **NestJS 11**, **Prisma 6**, and
-**PostgreSQL** (Supabase in production). It powers the
-[`easy-shop-network-frontend`](../easy-shop-network-frontend) Next.js app.
+API REST + temps réel de **Easy Shop Network (ESN)**, une plateforme e-commerce.
+Construite avec **NestJS 11** (TypeScript), **Prisma 6** sur **PostgreSQL**
+(Supabase), authentification par **JWT** (mode local bcrypt _ou_ Supabase Auth),
+paiements **Notch Pay** (Mobile Money + carte), emails **Resend**, SAV en temps
+réel via **Socket.IO**, logs **Pino** et documentation **Swagger**.
 
 ---
 
-## Table of contents
+## Sommaire
 
-- [Stack](#stack)
+- [Stack technique](#stack-technique)
 - [Architecture](#architecture)
-- [Domain model](#domain-model)
-- [Authentication & authorization](#authentication--authorization)
-- [Modules & API surface](#modules--api-surface)
-- [Real-time SAV (WebSocket)](#real-time-sav-websocket)
-- [Getting started](#getting-started)
-- [Environment variables](#environment-variables)
-- [Database workflow](#database-workflow)
-- [Seed data & default accounts](#seed-data--default-accounts)
-- [Running & scripts](#running--scripts)
-- [API docs (Swagger)](#api-docs-swagger)
-- [Project layout](#project-layout)
-- [Notes & gotchas](#notes--gotchas)
+- [Modèle de données](#modèle-de-données)
+- [Authentification & autorisations](#authentification--autorisations)
+- [Prérequis](#prérequis)
+- [Configuration (.env)](#configuration-env)
+- [Démarrage rapide](#démarrage-rapide)
+- [Base de données (Prisma)](#base-de-données-prisma)
+- [Scripts npm](#scripts-npm)
+- [Endpoints principaux](#endpoints-principaux)
+- [Temps réel (SAV)](#temps-réel-sav)
+- [Santé & observabilité](#santé--observabilité)
+- [Docker](#docker)
+- [Dépôts distants](#dépôts-distants)
 
 ---
 
-## Stack
+## Stack technique
 
-| Concern         | Tool                                                        |
-| --------------- | ----------------------------------------------------------- |
-| Framework       | NestJS 11 (TypeScript)                                       |
-| ORM / DB        | Prisma 6 → PostgreSQL (Supabase pooled connection)          |
-| Auth            | Dual mode: Supabase Auth **or** local bcrypt + self-issued JWT (HS256) |
-| Authorization   | Global `JwtAuthGuard` + `RolesGuard` + per-module permissions |
-| Real-time       | `@nestjs/websockets` + Socket.IO (SAV live chat)            |
-| Payments        | Notch Pay (mobile money + card)                             |
-| Email           | Resend (transactional)                                       |
-| Logging         | `nestjs-pino` (pretty in dev)                               |
-| API docs        | Swagger (`@nestjs/swagger`) at `/api/docs`                  |
-| Validation      | `class-validator` / `class-transformer` (global pipe, whitelist) |
+| Domaine            | Outil                                             |
+| ------------------ | ------------------------------------------------- |
+| Framework          | NestJS 11 (TypeScript)                            |
+| Base de données    | PostgreSQL (Supabase) via Prisma 6                |
+| Authentification   | JWT HS256 (Passport) — mode `local` ou `supabase` |
+| Temps réel         | Socket.IO (`@nestjs/websockets`)                  |
+| Paiements          | Notch Pay (Mobile Money + carte)                  |
+| Emails             | Resend                                            |
+| Logs               | Pino (`nestjs-pino`)                              |
+| Documentation API  | Swagger (`@nestjs/swagger`)                       |
+| Validation         | `class-validator` / `class-transformer`           |
 
 ---
 
 ## Architecture
 
+Application NestJS modulaire. Chaque domaine métier est un module autonome
+(controller + service + DTO), branché dans `AppModule`.
+
 ```
-                    ┌──────────────────────────────────────────┐
-                    │  Next.js frontend (storefront + admin)   │
-                    └───────────────┬──────────────────────────┘
-                        REST /api        WebSocket /sav
-                            │                 │
-        ┌───────────────────▼─────────────────▼───────────────────┐
-        │                    NestJS application                     │
-        │  Global pipe: ValidationPipe(whitelist, transform)        │
-        │  Global guards: JwtAuthGuard → RolesGuard                 │
-        │                                                           │
-        │  auth · users · products · categories · orders ·          │
-        │  payments · sav · analytics · mail · supabase · prisma    │
-        └───────────────────────────┬───────────────────────────────┘
-                                     │ Prisma Client (pooler-safe URL)
-                          ┌──────────▼──────────┐
-                          │  PostgreSQL / Supabase │
-                          └────────────────────────┘
-                External services: Resend (email), Notch Pay (payments)
-```
-
-- **Global prefix**: every route is served under `/api` (e.g. `GET /api/products`).
-- **Global guards** (in `app.module.ts`): `JwtAuthGuard` authenticates every
-  request unless the handler is marked `@Public()`; `RolesGuard` then enforces
-  `@Roles(...)`. See [Authentication & authorization](#authentication--authorization).
-- **PrismaService** normalizes the Supabase pooled URL at runtime (adds
-  `pgbouncer=true` + connection limits) so PgBouncer transaction mode doesn't
-  throw `prepared statement "s0" already exists`. The `.env` is left untouched.
-
----
-
-## Domain model
-
-Defined in [`prisma/schema.prisma`](prisma/schema.prisma).
-
-| Model            | Purpose                                                                 |
-| ---------------- | ----------------------------------------------------------------------- |
-| `User`           | Customers **and** staff. Holds `role`, per-module `permissions` (JSON), `isActive`, `lastLoginAt`, and (local mode) `passwordHash`. |
-| `Review`         | Product rating (1–5) + comment; one per `(product, user)`.              |
-| `Category`       | Product category with `slug`, `description`, and a color tag.           |
-| `Product`        | Catalogue item: `price`, `comparePrice`, `sku`, `stock`, `imageUrl`, markdown `description`, `isActive` (draft flag), category + reviews. |
-| `Order`          | Customer order with `status`, `total`, shipping address, items.         |
-| `OrderItem`      | Line item (product snapshot: quantity + unit price).                    |
-| `Payment`        | Notch Pay transaction linked to an order (`method`, `status`, `reference`). |
-| `Ticket`         | SAV/support ticket: `number` (TKT-00N), `subject`, `status`, `priority`, `category`, optional `order` + staff `assignee`. |
-| `TicketMessage`  | A message in a ticket thread (author + content).                        |
-| `AnalyticsEvent` | Generic tracked event for analytics.                                    |
-
-**Enums**: `Role` (CUSTOMER, SUPER_ADMIN, ADMIN, MODERATOR, SUPPORT),
-`OrderStatus` (PENDING, PAID, SHIPPED, DELIVERED, CANCELLED),
-`TicketStatus` (OPEN, IN_PROGRESS, RESOLVED, CLOSED),
-`TicketPriority` (LOW, NORMAL, HIGH, URGENT),
-`PaymentMethod` (MOBILE_MONEY, CARD), `PaymentStatus`.
-
----
-
-## Authentication & authorization
-
-**Two auth modes**, selected by `AUTH_MODE`:
-
-- `AUTH_MODE=supabase` (default/prod): register/login/refresh go through
-  Supabase Auth; the `JwtStrategy` verifies Supabase-issued HS256 tokens.
-- `AUTH_MODE=local` (dev, no Supabase needed): the API issues its own HS256
-  tokens signed with `SUPABASE_JWT_SECRET` and stores bcrypt password hashes.
-  Register/login/refresh/change-password all work offline.
-
-Either way the frontend stores `{ accessToken, refreshToken }` and sends
-`Authorization: Bearer <accessToken>`.
-
-**Guards (applied globally):**
-
-1. `JwtAuthGuard` — rejects unauthenticated requests unless the route is
-   `@Public()`.
-2. `RolesGuard` — enforces `@Roles(...)`. Key rules:
-   - `SUPER_ADMIN` is a superset — passes everything.
-   - **`@Roles(ADMIN)` means "any staff member"** (SUPER_ADMIN/ADMIN/MODERATOR/SUPPORT).
-     The admin panel is gated **on the client** (modules are hidden per
-     permission); the API never blocks staff by role. This is why a Moderator
-     can load and mutate every admin resource the UI exposes to them.
-
-**Per-module permissions**: each staff `User` has a `permissions` JSON of the
-shape `{ [module]: { view, create, edit, delete } }` for the 8 admin modules
-(dashboard, products, categories, orders, customers, sav, analytics, users).
-The frontend uses it to show/hide modules; role presets live in the frontend's
-`lib/permissions.ts` and are applied when creating a user.
-
----
-
-## Modules & API surface
-
-All paths are prefixed with `/api`. 🔓 = `@Public()`, otherwise auth required.
-"staff" = any non-customer role.
-
-### `auth`
-| Method | Path                    | Access | Notes |
-| ------ | ----------------------- | ------ | ----- |
-| POST   | `/auth/register` 🔓     | public | email + password (+ names) |
-| POST   | `/auth/login` 🔓        | public | returns access + refresh tokens; stamps `lastLoginAt`; rejects deactivated accounts |
-| POST   | `/auth/refresh` 🔓      | public | rotate tokens |
-| POST   | `/auth/change-password` | self   | local mode: verifies current password |
-| GET    | `/auth/me`              | self   | decoded token payload |
-
-### `users`
-| Method | Path                          | Access | Notes |
-| ------ | ----------------------------- | ------ | ----- |
-| GET    | `/users`                      | staff  | all users + order counts |
-| POST   | `/users`                      | staff  | create staff account; **emails a generated password** |
-| GET    | `/users/customers`            | staff  | customers with order count + total spent |
-| GET    | `/users/customers/:id`        | staff  | full customer profile + recent orders + stats |
-| POST   | `/users/customers/:id/email`  | staff  | send a one-off email to a customer |
-| GET    | `/users/me`                   | self   | own profile |
-| PATCH  | `/users/me`                   | self   | update own profile |
-| PATCH  | `/users/:id`                  | staff  | update role / permissions / active / name |
-| DELETE | `/users/:id`                  | staff  | deactivate (soft) |
-
-### `products`
-| Method | Path                  | Access | Notes |
-| ------ | --------------------- | ------ | ----- |
-| GET    | `/products` 🔓        | public | active products + rating aggregates |
-| GET    | `/products/:id` 🔓    | public | single product + rating |
-| GET    | `/products/admin/all` | staff  | **includes drafts** + rating + category |
-| POST   | `/products`           | staff  | create (supports `categoryId`, `comparePrice`, `sku`, markdown `description`, `isActive` draft) |
-| PATCH  | `/products/:id`       | staff  | update |
-| DELETE | `/products/:id`       | staff  | soft delete (sets `isActive:false`) |
-
-### `categories`
-CRUD (`GET` list/one public; `POST`/`PATCH`/`DELETE` staff). Supports color tags.
-
-### `orders`
-| Method | Path                   | Access | Notes |
-| ------ | ---------------------- | ------ | ----- |
-| POST   | `/orders`              | auth   | create from cart items; decrements stock in a transaction |
-| GET    | `/orders`              | auth   | customers see own; **staff see all** (with customer info) |
-| GET    | `/orders/:id`          | auth   | scoped like above |
-| PATCH  | `/orders/:id/status`   | staff  | update status |
-| POST   | `/orders/:id/notify`   | staff  | email the customer about their order |
-
-### `payments`
-`POST /payments/initiate` (starts a Notch Pay transaction — amount rounded,
-XAF has no minor units), `GET /payments`, `POST /payments/webhook` 🔓 (Notch Pay
-callback; verifies signature).
-
-### `sav` (support tickets) — base path `/api/sav/tickets`
-| Method | Path                          | Access | Notes |
-| ------ | ----------------------------- | ------ | ----- |
-| POST   | `/sav/tickets`                | auth   | customer opens a ticket (subject, message, priority, category, order) |
-| GET    | `/sav/tickets`                | auth   | own for customers, **all for staff** |
-| GET    | `/sav/tickets/:id`            | auth   | thread + participants |
-| POST   | `/sav/tickets/:id/messages`   | auth   | reply (also broadcast over WebSocket) |
-| PATCH  | `/sav/tickets/:id`            | staff  | update status / priority / category / assignee |
-
-### `analytics`
-`POST /analytics/events` 🔓 (track), `GET /analytics/summary`,
-`GET /analytics/dashboard` (monthly revenue/orders + top products),
-`GET /analytics/overview` (Sales / Categories / Products / Reviews tabs) — all staff.
-
----
-
-## Real-time SAV (WebSocket)
-
-Namespace **`/sav`** (Socket.IO). Clients connect with the access token:
-
-```ts
-import { io } from "socket.io-client";
-const socket = io("http://localhost:3001/sav", { auth: { token: accessToken } });
-socket.emit("ticket:join", ticketId);
-socket.on("ticket:message", (msg) => { /* new message */ });
-socket.on("ticket:status", ({ status }) => { /* status changed */ });
-socket.emit("ticket:message", { ticketId, content });
+src/
+├── main.ts                 # bootstrap : ValidationPipe global, préfixe /api, Swagger, CORS
+├── app.module.ts           # assemble tous les modules
+│
+├── prisma/                 # PrismaService (connexion, normalisation URL pooler)
+├── supabase/               # client Supabase (auth optionnelle)
+├── mail/                   # MailService (Resend) — module global
+│
+├── auth/                   # register / login / refresh / change-password / me
+│   ├── guards/             # JwtAuthGuard (global), RolesGuard
+│   ├── decorators/         # @Public(), @Roles(), @CurrentUser()
+│   ├── strategies/         # JwtStrategy (vérifie les tokens HS256)
+│   └── roles.util.ts       # isStaff() — tout rôle ≠ CUSTOMER voit les données transverses
+│
+├── users/                  # profil, gestion du staff (rôles + permissions), clients
+├── products/               # catalogue (public) + gestion admin (drafts, ratings)
+├── categories/             # catégories + tag couleur
+├── orders/                 # commandes, items, statut
+├── payments/               # initiation Notch Pay + webhook
+├── sav/                    # tickets support + passerelle Socket.IO temps réel
+└── analytics/              # événements + agrégats dashboard / overview
 ```
 
-The gateway authenticates the socket (same JWT secret), enforces ticket access,
-and **the service emits over the gateway on every change — REST or socket** — so
-the customer and the agent stay in sync regardless of how a message was sent.
+**Points transverses :**
+
+- **`ValidationPipe` global** avec `whitelist` + `forbidNonWhitelisted` : toute
+  propriété non déclarée dans un DTO est rejetée (400).
+- **Préfixe global `/api`** sur toutes les routes.
+- **`JwtAuthGuard` global** : toutes les routes sont protégées par défaut ; on
+  ouvre explicitement avec `@Public()`.
+- **`RolesGuard`** : les routes `@Roles(Role.ADMIN)` sont accessibles à **tout
+  membre du staff** (SUPER_ADMIN / ADMIN / MODERATOR / SUPPORT). Le contrôle fin
+  par module se fait côté client (masquage des modules selon les permissions) —
+  l'API ne bloque pas par rôle au-delà de « staff vs client ».
 
 ---
 
-## Getting started
+## Modèle de données
 
-### Prerequisites
+Défini dans [`prisma/schema.prisma`](prisma/schema.prisma).
 
-- **Node.js 20+** and npm
-- A **PostgreSQL** database — either:
-  - a **Supabase** project (recommended, matches prod), or
-  - local Postgres via **Docker** (`docker compose up -d db` → port 5433).
+| Modèle           | Rôle                                                                  |
+| ---------------- | -------------------------------------------------------------------- |
+| `User`           | comptes clients **et** staff (`role`, `permissions` JSON, `isActive`)|
+| `Category`       | catégories produit (`slug`, `color`)                                 |
+| `Product`        | produits (`price`, `comparePrice`, `sku`, `stock`, `isActive` = brouillon) |
+| `Review`         | avis clients (note + commentaire) → ratings produits                 |
+| `Order` / `OrderItem` | commandes et leurs lignes                                       |
+| `Payment`        | transactions Notch Pay                                               |
+| `Ticket` / `TicketMessage` | SAV : sujet, `status`, `priority`, `category`, assigné, messages |
+| `AnalyticsEvent` | événements de tracking (pour les agrégats analytics)                 |
 
-### Install & run
+**Enums :** `Role`, `OrderStatus`, `TicketStatus`, `TicketPriority`,
+`PaymentMethod`, `PaymentStatus`.
+
+---
+
+## Authentification & autorisations
+
+Deux modes, choisis via `AUTH_MODE` :
+
+- **`local`** (recommandé pour le dev) — le backend gère lui-même les mots de
+  passe (bcrypt) et émet ses propres JWT HS256 signés avec `SUPABASE_JWT_SECRET`
+  (audience `authenticated`). Aucun projet Supabase Auth requis.
+- **`supabase`** — délègue `register` / `login` / `refresh` à Supabase Auth. Si
+  Supabase n'est pas configuré, ces routes renvoient un **503 explicite** (le
+  reste de l'API reste opérationnel).
+
+**Rôles :** `CUSTOMER`, `SUPPORT`, `MODERATOR`, `ADMIN`, `SUPER_ADMIN`.
+Les permissions fines par module (`view` / `create` / `edit` / `delete`) sont
+stockées dans `User.permissions` (JSON) et pilotent le masquage des modules du
+panneau d'administration côté frontend.
+
+---
+
+## Prérequis
+
+- **Node.js ≥ 20**
+- **npm ≥ 10**
+- Une base **PostgreSQL** : soit Supabase, soit un Postgres local (voir
+  [`docker-compose.yml`](docker-compose.yml) : `npm run db:up`).
+
+---
+
+## Configuration (.env)
+
+Copier `.env.example` vers `.env` puis renseigner :
+
+| Variable                 | Description                                                        |
+| ------------------------ | ----------------------------------------------------------------- |
+| `DATABASE_URL`           | URL Postgres applicative (pooler Supabase port 6543 en prod)      |
+| `DIRECT_URL`             | URL directe (migrations Prisma)                                   |
+| `SUPABASE_URL`           | URL du projet Supabase (mode `supabase` ; peut être factice en local) |
+| `SUPABASE_ANON_KEY`      | clé anon Supabase                                                 |
+| `SUPABASE_JWT_SECRET`    | secret HS256 signant/vérifiant les JWT (**obligatoire**)          |
+| `RESEND_API_KEY`         | clé API Resend (emails)                                           |
+| `MAIL_FROM`              | expéditeur des emails (`Nom <no-reply@domaine>`)                  |
+| `NOTCHPAY_PUBLIC_KEY`    | clé publique Notch Pay                                            |
+| `NOTCHPAY_HASH_KEY`      | clé de vérification du webhook Notch Pay                          |
+| `NOTCHPAY_CALLBACK_URL`  | URL de callback paiement                                          |
+| `PORT`                   | port HTTP (défaut `3000`, `3001` en dev local ici)               |
+| `LOG_LEVEL`              | niveau de log Pino (`info`, `debug`, …)                           |
+| `AUTH_MODE`              | `local` ou `supabase`                                             |
+
+> **Note pooler Supabase :** `PrismaService` ajoute automatiquement
+> `pgbouncer=true` (+ limites de connexion) à l'URL du pooler (port 6543) pour
+> éviter l'erreur `prepared statement "s0" already exists`. Le `.env` n'a pas à
+> être modifié.
+
+---
+
+## Démarrage rapide
 
 ```bash
-cd easy-shop-network-backend
+# 1. Dépendances
 npm install
-cp .env.example .env          # then fill in the values (see below)
-npm run db:push               # create tables from the Prisma schema
-npm run db:seed               # optional: demo data + admin account
-npm run start:dev             # http://localhost:3001 (if PORT=3001)
+
+# 2. (Option A) Base Postgres locale via Docker
+npm run db:up
+
+# 3. Configurer .env (voir ci-dessus), puis appliquer le schéma
+npm run db:push
+
+# 4. (Optionnel) Jeu de données de démonstration
+npm run db:seed
+
+# 5. Lancer en développement (watch)
+npm run start:dev
 ```
 
-Swagger UI: **http://localhost:<PORT>/api/docs**
+L'API écoute sur `http://localhost:$PORT/api` — Swagger sur `/api/docs`.
+
+Le seed crée un compte **super-admin** de démonstration :
+`admin@esn.dev` / `Admin123!`.
 
 ---
 
-## Environment variables
-
-Copy `.env.example` → `.env`. Keys:
-
-| Variable                | Required | Description |
-| ----------------------- | -------- | ----------- |
-| `DATABASE_URL`          | ✅       | Postgres connection used by the app. Supabase: the **pooled** URL (port 6543). |
-| `DIRECT_URL`            | ✅       | Direct (non-pooled) URL used by Prisma for migrations / `db push` (port 5432). |
-| `SUPABASE_URL`          | supabase mode | Supabase project URL. |
-| `SUPABASE_ANON_KEY`     | supabase mode | Supabase anon key. |
-| `SUPABASE_JWT_SECRET`   | ✅       | HS256 secret. **Also used to sign tokens in local mode.** |
-| `RESEND_API_KEY`        | for email | Resend API key. |
-| `MAIL_FROM`             | for email | From address, e.g. `"ESN <noreply@yourdomain.com>"`. |
-| `NOTCHPAY_PUBLIC_KEY`   | for payments | Notch Pay public key. |
-| `NOTCHPAY_HASH_KEY`     | for payments | Webhook signature key. |
-| `NOTCHPAY_CALLBACK_URL` | for payments | Payment callback URL. |
-| `PORT`                  | ✅       | HTTP port (this project runs the API on **3001**). |
-| `LOG_LEVEL`             |          | pino level (`info`, `debug`, …). |
-| `AUTH_MODE`             |          | `supabase` (default) or `local` (dev without Supabase). |
-
-> The Prisma service auto-appends `pgbouncer=true&connection_limit=…` to a
-> Supabase pooled URL at runtime — don't add it to `.env` yourself.
-
----
-
-## Database workflow
+## Base de données (Prisma)
 
 ```bash
-npm run db:up      # (optional) start local Postgres in Docker on :5433
-npm run db:push    # sync the schema to the DB (no migration files)
-npx prisma generate  # regenerate the Prisma client after schema changes
-npm run db:seed    # (re)seed demo data — idempotent upserts
-npx prisma studio  # browse the DB in a GUI
+npm run db:push      # applique le schéma (dev, sans migration versionnée)
+npm run db:seed      # peuple des données de démo (catégories, produits, avis, tickets)
+npx prisma studio    # explorateur de données
 ```
 
-This project uses `prisma db push` (schema-sync) rather than migration files.
-After editing `schema.prisma`, run `db:push` then `prisma generate`.
+Le client Prisma est régénéré automatiquement par `db:push` /
+`prisma generate`.
 
 ---
 
-## Seed data & default accounts
+## Scripts npm
 
-`prisma/seed.ts` creates categories, products (with reviews), demo customers,
-and SAV tickets. It also creates the **super-admin** used to sign into the
-admin panel:
-
-| Account         | Password    | Role          |
-| --------------- | ----------- | ------------- |
-| `admin@esn.dev` | `Admin123!` | `SUPER_ADMIN` |
-
-Staff accounts created through the admin **User Management** screen receive a
-generated password by email (Resend).
-
----
-
-## Running & scripts
-
-| Script               | What it does                              |
-| -------------------- | ----------------------------------------- |
-| `npm run start:dev`  | Watch mode (recommended for development)   |
-| `npm run start`      | Run once                                   |
-| `npm run build`      | Compile to `dist/`                         |
-| `npm run start:prod` | Run the compiled build (`node dist/main`)  |
-| `npm run db:up`      | Start local Postgres (Docker)              |
-| `npm run db:push`    | Sync Prisma schema to the DB               |
-| `npm run db:seed`    | Seed demo data + admin                     |
-| `npm run lint`       | ESLint (autofix)                           |
-| `npm run test`       | Jest unit tests                            |
-| `npm run test:e2e`   | Jest e2e tests                             |
+| Script              | Effet                                             |
+| ------------------- | ------------------------------------------------- |
+| `npm run start:dev` | dev en watch mode                                 |
+| `npm run start`     | démarrage simple                                  |
+| `npm run start:prod`| exécute le build (`node dist/src/main`)           |
+| `npm run build`     | compilation Nest → `dist/`                        |
+| `npm run lint`      | ESLint (auto-fix)                                 |
+| `npm run format`    | Prettier                                          |
+| `npm test`          | tests unitaires Jest                              |
+| `npm run test:e2e`  | tests end-to-end                                  |
+| `npm run db:up`     | Postgres local via Docker Compose                 |
+| `npm run db:push`   | applique le schéma Prisma                         |
+| `npm run db:seed`   | seed de démonstration                             |
 
 ---
 
-## API docs (Swagger)
+## Endpoints principaux
 
-Interactive docs are generated at **`/api/docs`**. Use the **Authorize**
-button with a Bearer token (from `POST /api/auth/login`) to call protected
-endpoints.
+Toutes les routes sont préfixées par `/api`. `🔓` = public, sinon JWT requis ;
+`👑` = staff (`@Roles(ADMIN)`).
+
+**Auth** — `POST /auth/register` 🔓, `POST /auth/login` 🔓,
+`POST /auth/refresh` 🔓, `POST /auth/change-password`, `GET /auth/me`.
+
+**Users** — `GET /users/me`, `PATCH /users/me`,
+`GET /users` 👑, `POST /users` 👑 (crée un staff, mot de passe envoyé par email),
+`PATCH /users/:id` 👑 (rôle / permissions / actif), `DELETE /users/:id` 👑,
+`GET /users/customers` 👑, `GET /users/customers/:id` 👑,
+`POST /users/customers/:id/email` 👑.
+
+**Products** — `GET /products` 🔓, `GET /products/:id` 🔓,
+`GET /products/admin/all` 👑 (inclut les brouillons + ratings),
+`POST /products` 👑, `PATCH /products/:id` 👑, `DELETE /products/:id` 👑.
+
+**Categories** — `GET /categories` 🔓, `GET /categories/:id` 🔓,
+`POST /categories` 👑, `PATCH /categories/:id` 👑, `DELETE /categories/:id` 👑.
+
+**Orders** — `POST /orders`, `GET /orders`, `GET /orders/:id`,
+`PATCH /orders/:id/status` 👑, `POST /orders/:id/notify` 👑.
+
+**Payments** — `POST /payments/initiate`, `GET /payments`,
+`POST /payments/webhook` 🔓 (callback Notch Pay).
+
+**SAV** — `POST /sav/tickets`, `GET /sav/tickets`, `GET /sav/tickets/:id`,
+`POST /sav/tickets/:id/messages`, `PATCH /sav/tickets/:id` 👑.
+
+**Analytics** — `POST /analytics/events` 🔓, `GET /analytics/summary` 👑,
+`GET /analytics/dashboard` 👑, `GET /analytics/overview` 👑.
+
+> La liste exhaustive et interactive est disponible dans **Swagger** sur
+> `/api/docs`.
 
 ---
 
-## Project layout
+## Temps réel (SAV)
 
+Le SAV utilise **Socket.IO**, namespace `/sav`. Le client se connecte avec son
+token :
+
+```js
+io("http://localhost:3001/sav", { auth: { token: "<accessToken>" } });
 ```
-easy-shop-network-backend/
-├─ prisma/
-│  ├─ schema.prisma        # data model (source of truth)
-│  └─ seed.ts              # demo data + admin account
-├─ src/
-│  ├─ main.ts              # bootstrap: /api prefix, validation, CORS, Swagger
-│  ├─ app.module.ts        # wires modules + global JwtAuthGuard & RolesGuard
-│  ├─ auth/                # login/register/refresh, JWT strategy, guards, roles.util
-│  ├─ users/               # profiles, staff CRUD, customers, permissions
-│  ├─ products/            # catalogue CRUD + admin listing + ratings
-│  ├─ categories/          # categories CRUD + color tags
-│  ├─ orders/              # order creation, scoping, status
-│  ├─ payments/            # Notch Pay client + webhook
-│  ├─ sav/                 # tickets: controller, service, socket gateway
-│  ├─ analytics/           # summary / dashboard / overview aggregations
-│  ├─ mail/                # Resend wrapper (global module)
-│  ├─ supabase/            # Supabase client provider
-│  └─ prisma/              # PrismaService (pooler-safe URL)
-├─ docker-compose.yml      # local Postgres (:5433)
-└─ .env.example
-```
+
+- `emit("ticket:join", ticketId)` — rejoint la conversation.
+- `emit("ticket:message", { ticketId, content })` — envoie un message.
+- écoute `ticket:message` et `ticket:status` — mises à jour en direct.
+
+Les changements arrivés **par REST** (`POST …/messages`, `PATCH …`) sont aussi
+diffusés à la room, donc admin et client restent synchronisés quel que soit le
+canal.
 
 ---
 
-## Notes & gotchas
+## Santé & observabilité
 
-- **The `/api` prefix is global** — call `http://localhost:3001/api/...`.
-- **Frontend must point at the API**: set `NEXT_PUBLIC_API_URL` in the frontend
-  to `http://127.0.0.1:3001/api`. Prefer `127.0.0.1` over `localhost` so Node's
-  server-side fetch doesn't resolve to IPv6 `::1`.
-- **Supabase pooler quirks**: the app handles the `pgbouncer=true` requirement
-  automatically. If you ever see `prepared statement already exists`, confirm
-  `DATABASE_URL` is the **pooled** URL and `DIRECT_URL` the direct one.
-- **XAF payments**: amounts are rounded before hitting Notch Pay (XAF has no
-  decimal minor units).
-- **Soft deletes**: products and users are deactivated, not hard-deleted, so
-  existing orders keep their references.
+- `GET /api/health` — **liveness** : renvoie `200 { status: "ok", uptime }` dès
+  que le process tourne (ne dépend pas de la base).
+- `GET /api/health/ready` — **readiness** : effectue un `SELECT 1` ;
+  `200 { database: "up" }` si la base répond, sinon `503`.
+
+La connexion Prisma au démarrage est **non bloquante** : si la base est
+momentanément injoignable, l'application démarre quand même (la liveness passe,
+la readiness reste en 503 jusqu'au rétablissement). Cela évite un crash-loop du
+conteneur au boot.
+
+Logs structurés via Pino (`LOG_LEVEL`).
+
+---
+
+## Docker
+
+Image multi-stage optimisée (`deps` → `build` → `runner`), utilisateur non-root,
+`tini` comme PID 1, `HEALTHCHECK` intégré.
+
+```bash
+# Build (le builder classique évite un accès registry superflu si l'image de base
+# est déjà en cache)
+DOCKER_BUILDKIT=0 docker build -t esn-backend:local .
+
+# Run — env sans guillemets (docker --env-file ne les retire pas, contrairement à
+# docker compose / dotenv)
+docker run -d --name esn --env-file .env -e PORT=3000 -p 3001:3000 esn-backend:local
+
+# Vérifier la santé
+curl http://localhost:3001/api/health
+curl http://localhost:3001/api/health/ready
+docker inspect --format '{{.State.Health.Status}}' esn
+```
+
+Le `docker-compose.yml` fournit aussi un **Postgres de développement** local
+(`npm run db:up`).
+
+---
+
+## Dépôts distants
+
+| Remote   | URL                                              |
+| -------- | ------------------------------------------------ |
+| `origin` | `https://gitlab.com/easy-shop-network/backend.git` |
+| `github` | `https://github.com/PatrickLoic-dev/esn-backend.git` |
+
+Workflow Git : `main` (releases) ← `develop` (intégration) ←
+`feature/<nom>` (gitflow).
