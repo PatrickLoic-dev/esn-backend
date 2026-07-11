@@ -123,6 +123,27 @@ export class SavService {
     if (nextStatus !== ticket.status) {
       this.gateway.emitStatus(ticketId, nextStatus);
     }
+
+    // Réponse du staff → notifie le client par email
+    if (isStaff(user.role)) {
+      const owner = await this.prisma.user.findUnique({
+        where: { id: ticket.userId },
+        select: { email: true, firstName: true },
+      });
+      if (owner) {
+        void this.mail
+          .send(
+            owner.email,
+            `Réponse à votre ticket : ${ticket.subject}`,
+            `<p>Bonjour ${owner.firstName ?? ''},</p>
+             <p>Notre équipe a répondu à votre ticket <b>${ticket.subject}</b> :</p>
+             <blockquote>${content}</blockquote>
+             <p>Connectez-vous à votre espace client pour poursuivre la conversation.</p>
+             <p>— Easy Shop Network</p>`,
+          )
+          .catch(() => undefined);
+      }
+    }
     return message;
   }
 

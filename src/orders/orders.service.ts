@@ -12,11 +12,11 @@ import { JwtPayload } from '../auth/decorators/current-user.decorator';
 import { isStaff } from '../auth/roles.util';
 
 const STATUS_MESSAGE: Record<OrderStatus, string> = {
-  PENDING: 'has been received and is awaiting payment',
-  PAID: 'has been paid and is now being prepared',
-  SHIPPED: 'has been shipped and is on its way',
-  DELIVERED: 'has been delivered — enjoy!',
-  CANCELLED: 'has been cancelled',
+  PENDING: 'a bien été reçue et est en attente de paiement',
+  PAID: 'a été payée et est en cours de préparation',
+  SHIPPED: 'a été expédiée et est en route',
+  DELIVERED: 'a été livrée — bonne réception !',
+  CANCELLED: 'a été annulée',
 };
 
 @Injectable()
@@ -27,7 +27,10 @@ export class OrdersService {
   ) {}
 
   async create(userId: string, dto: CreateOrderDto) {
-    return this.prisma.$transaction(async (tx) => {
+    // Lignes de récapitulatif (nom/quantité/prix) pour l'email de confirmation
+    const summaryLines: string[] = [];
+
+    const order = await this.prisma.$transaction(async (tx) => {
       let total = new Prisma.Decimal(0);
       const items: {
         productId: string;
@@ -57,6 +60,11 @@ export class OrdersService {
           quantity: item.quantity,
           unitPrice: product.price,
         });
+        summaryLines.push(
+          `${item.quantity} × ${product.name} — ${product.price
+            .mul(item.quantity)
+            .toFixed(2)} FCFA`,
+        );
       }
 
       const shippingCost = dto.shippingCost
@@ -73,9 +81,29 @@ export class OrdersService {
           shippingCost,
           items: { create: items },
         },
-        include: { items: true },
+        include: {
+          items: true,
+          user: { select: { email: true, firstName: true } },
+        },
       });
     });
+
+    // Email de confirmation de commande (fire-and-forget, ne bloque pas)
+    const ref = order.id.slice(0, 8).toUpperCase();
+    void this.mail
+      .send(
+        order.user.email,
+        `Confirmation de votre commande ${ref}`,
+        `<p>Bonjour ${order.user.firstName ?? ''},</p>
+         <p>Merci ! Votre commande <b>${ref}</b> a bien été enregistrée.</p>
+         <ul>${summaryLines.map((l) => `<li>${l}</li>`).join('')}</ul>
+         <p><b>Total : ${order.total.toFixed(2)} FCFA</b></p>
+         <p>Vous pouvez suivre son statut depuis votre espace client.</p>
+         <p>— Easy Shop Network</p>`,
+      )
+      .catch(() => undefined);
+
+    return order;
   }
 
   findAllForUser(user: JwtPayload) {
@@ -124,7 +152,25 @@ export class OrdersService {
     if (!order) {
       throw new NotFoundException(`Order ${id} not found`);
     }
-    return this.prisma.order.update({ where: { id }, data: { status } });
+    const updated = await this.prisma.order.update({
+      where: { id },
+      data: { status },
+      include: { user: { select: { email: true, firstName: true } } },
+    });
+    // Notifie automatiquement le client du nouveau statut (si changement réel)
+    if (status !== order.status) {
+      const ref = updated.id.slice(0, 8).toUpperCase();
+      void this.mail
+        .send(
+          updated.user.email,
+          `Mise à jour de votre commande ${ref}`,
+          `<p>Bonjour ${updated.user.firstName ?? ''},</p>
+           <p>Votre commande <b>${ref}</b> ${STATUS_MESSAGE[status]}.</p>
+           <p>— Easy Shop Network</p>`,
+        )
+        .catch(() => undefined);
+    }
+    return updated;
   }
 
   // Admin: email the customer their current order status
