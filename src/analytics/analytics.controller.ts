@@ -27,4 +27,18 @@ export class AnalyticsController {
   summary() {
     return this.analyticsService.summary();
   }
+
+  @ApiBearerAuth()
+  @Roles(Role.ADMIN)
+  @Get('dashboard')
+  dashboard() {
+    return this.analyticsService.dashboard();
+  }
+
+  @ApiBearerAuth()
+  @Roles(Role.ADMIN)
+  @Get('overview')
+  overview() {
+    return this.analyticsService.adminOverview();
+  }
 }

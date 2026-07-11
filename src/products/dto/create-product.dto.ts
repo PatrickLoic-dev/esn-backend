@@ -19,6 +19,15 @@ export class CreateProductDto {
   @Min(0)
   price: number;
 
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  comparePrice?: number;
+
+  @IsOptional()
+  @IsString()
+  sku?: string;
+
   @IsInt()
   @Min(0)
   stock: number;
@@ -26,6 +35,10 @@ export class CreateProductDto {
   @IsOptional()
   @IsString()
   imageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
 
   @IsOptional()
   @IsBoolean()

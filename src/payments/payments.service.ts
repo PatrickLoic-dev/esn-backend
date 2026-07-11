@@ -5,17 +5,14 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  OrderStatus,
-  PaymentStatus,
-  Role,
-} from '@prisma/client';
+import { OrderStatus, PaymentStatus } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotchPayClient } from './notchpay.client';
 import { MailService } from '../mail/mail.service';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
 import { JwtPayload } from '../auth/decorators/current-user.decorator';
+import { isStaff } from '../auth/roles.util';
 
 @Injectable()
 export class PaymentsService {
@@ -43,7 +40,8 @@ export class PaymentsService {
 
     const reference = `order_${order.id}_${randomUUID().slice(0, 8)}`;
     const init = await this.notchpay.initializePayment({
-      amount: order.total.toNumber(),
+      // XAF has no minor units — Notch Pay rejects fractional amounts
+      amount: Math.round(order.total.toNumber()),
       currency: 'XAF',
       email: user.email,
       phone: dto.phone,
@@ -113,7 +111,7 @@ export class PaymentsService {
   }
 
   findAllForUser(user: JwtPayload) {
-    const where = user.role === Role.ADMIN ? {} : { userId: user.sub };
+    const where = isStaff(user.role) ? {} : { userId: user.sub };
     return this.prisma.payment.findMany({
       where,
       orderBy: { createdAt: 'desc' },

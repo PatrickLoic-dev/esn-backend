@@ -1,5 +1,11 @@
-import { Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  forwardRef,
+  Inject,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { TicketStatus } from '@prisma/client';
 import {
   ConnectedSocket,
   MessageBody,
@@ -32,8 +38,18 @@ export class SavGateway implements OnGatewayConnection {
   constructor(
     private config: ConfigService,
     private prisma: PrismaService,
+    @Inject(forwardRef(() => SavService))
     private savService: SavService,
   ) {}
+
+  // Called by SavService so REST-originated changes also reach live sockets
+  emitMessage(ticketId: string, message: unknown) {
+    this.server?.to(`ticket:${ticketId}`).emit('ticket:message', message);
+  }
+
+  emitStatus(ticketId: string, status: TicketStatus) {
+    this.server?.to(`ticket:${ticketId}`).emit('ticket:status', { status });
+  }
 
   async handleConnection(client: AuthedSocket) {
     try {
@@ -86,12 +102,12 @@ export class SavGateway implements OnGatewayConnection {
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() body: { ticketId: string; content: string },
   ) {
+    // addMessage persists and broadcasts to the room via emitMessage()
     const message = await this.savService.addMessage(
       body.ticketId,
       client.data.user,
       body.content,
     );
-    this.server.to(`ticket:${body.ticketId}`).emit('ticket:message', message);
     return message;
   }
 }

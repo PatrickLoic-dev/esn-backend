@@ -1,26 +1,68 @@
 import {
   BadRequestException,
   Injectable,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Session } from '@supabase/supabase-js';
+import { ConfigService } from '@nestjs/config';
+import { Session, SupabaseClient } from '@supabase/supabase-js';
+import * as bcrypt from 'bcryptjs';
+import * as jwt from 'jsonwebtoken';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { MailService } from '../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+
+const ACCESS_TTL = 60 * 60; // 1h
+const REFRESH_TTL = 60 * 60 * 24 * 7; // 7d
 
 @Injectable()
 export class AuthService {
+  private readonly localMode: boolean;
+  private readonly jwtSecret: string;
+
   constructor(
     private prisma: PrismaService,
     private supabase: SupabaseService,
     private mail: MailService,
-  ) {}
+    config: ConfigService,
+  ) {
+    // AUTH_MODE=local issues our own HS256 tokens (same secret/audience the
+    // JwtStrategy verifies), so the full auth flow works without Supabase.
+    this.localMode = config.get<string>('AUTH_MODE') === 'local';
+    this.jwtSecret = config.getOrThrow<string>('SUPABASE_JWT_SECRET');
+  }
 
   async register(dto: RegisterDto) {
-    const { data, error } = await this.supabase.client.auth.signUp({
+    if (this.localMode) {
+      const existing = await this.prisma.user.findUnique({
+        where: { email: dto.email },
+      });
+      if (existing) {
+        throw new BadRequestException('Email already registered');
+      }
+      const user = await this.prisma.user.create({
+        data: {
+          email: dto.email,
+          passwordHash: await bcrypt.hash(dto.password, 10),
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+        },
+      });
+      void this.mail
+        .send(
+          dto.email,
+          'Welcome!',
+          `<p>Hi ${dto.firstName ?? ''}, your account has been created.</p>`,
+        )
+        .catch(() => undefined);
+      return { userId: user.id, ...this.issueTokens(user.id, user.email) };
+    }
+
+    const { data, error } = await this.requireSupabase().auth.signUp({
       email: dto.email,
       password: dto.password,
     });
@@ -56,8 +98,28 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
+    if (this.localMode) {
+      const user = await this.prisma.user.findUnique({
+        where: { email: dto.email },
+      });
+      if (
+        !user?.passwordHash ||
+        !(await bcrypt.compare(dto.password, user.passwordHash))
+      ) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+      if (!user.isActive) {
+        throw new UnauthorizedException('This account has been deactivated');
+      }
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      });
+      return this.issueTokens(user.id, user.email);
+    }
+
     const { data, error } =
-      await this.supabase.client.auth.signInWithPassword({
+      await this.requireSupabase().auth.signInWithPassword({
         email: dto.email,
         password: dto.password,
       });
@@ -68,13 +130,68 @@ export class AuthService {
   }
 
   async refresh(dto: RefreshTokenDto) {
-    const { data, error } = await this.supabase.client.auth.refreshSession({
+    if (this.localMode) {
+      try {
+        const payload = jwt.verify(dto.refreshToken, this.jwtSecret, {
+          audience: 'refresh',
+        }) as { sub: string; email: string };
+        return this.issueTokens(payload.sub, payload.email);
+      } catch {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+    }
+
+    const { data, error } = await this.requireSupabase().auth.refreshSession({
       refresh_token: dto.refreshToken,
     });
     if (error || !data.session) {
       throw new UnauthorizedException('Invalid refresh token');
     }
     return this.toTokens(data.session);
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    if (!this.localMode) {
+      throw new BadRequestException(
+        'Password change is managed by Supabase in this mode',
+      );
+    }
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (
+      !user?.passwordHash ||
+      !(await bcrypt.compare(dto.currentPassword, user.passwordHash))
+    ) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: await bcrypt.hash(dto.newPassword, 10) },
+    });
+    return { success: true };
+  }
+
+  // Accès sûr au client Supabase (mode d'auth Supabase uniquement) : renvoie
+  // une erreur 503 explicite si Supabase n'est pas configuré plutôt que de
+  // planter sur un accès à null.
+  private requireSupabase(): SupabaseClient {
+    if (!this.supabase.client) {
+      throw new ServiceUnavailableException(
+        "L'authentification Supabase n'est pas configurée sur ce serveur.",
+      );
+    }
+    return this.supabase.client;
+  }
+
+  private issueTokens(userId: string, email: string) {
+    const accessToken = jwt.sign({ sub: userId, email }, this.jwtSecret, {
+      audience: 'authenticated',
+      expiresIn: ACCESS_TTL,
+    });
+    const refreshToken = jwt.sign({ sub: userId, email }, this.jwtSecret, {
+      audience: 'refresh',
+      expiresIn: REFRESH_TTL,
+    });
+    return { accessToken, refreshToken, expiresIn: ACCESS_TTL };
   }
 
   private toTokens(session: Session | null) {

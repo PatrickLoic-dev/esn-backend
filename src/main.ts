@@ -18,9 +18,9 @@ async function bootstrap() {
   app.enableCors();
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('Ecommerce API')
+    .setTitle('Easy Shop Network API')
     .setDescription(
-      'Ecommerce backend boilerplate — Supabase auth, products, orders, Notch Pay payments, SAV ticketing',
+      'Easy Shop Network (ESN) e-commerce backend — Supabase auth, products, orders, Notch Pay payments, SAV ticketing',
     )
     .setVersion('1.0')
     .addBearerAuth()
@@ -28,6 +28,12 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, document);
 
-  await app.listen(process.env.PORT ?? 3000);
+  // Arrêt gracieux : déclenche les hooks onModuleDestroy (fermeture propre du
+  // pool Prisma) quand le conteneur reçoit SIGTERM/SIGINT.
+  app.enableShutdownHooks();
+
+  // 0.0.0.0 est indispensable en conteneur : sinon le serveur n'écoute que sur
+  // la boucle locale et n'est pas joignable depuis l'extérieur du conteneur.
+  await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
 }
 void bootstrap();
