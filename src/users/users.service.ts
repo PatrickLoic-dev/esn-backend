@@ -150,12 +150,24 @@ export class UsersService {
     void this.mail
       .send(
         dto.email,
-        'Your Easy Shop Network admin account',
-        `<p>Hello ${dto.fullName},</p>
-         <p>An administrator account has been created for you on Easy Shop Network.</p>
-         <p><strong>Email:</strong> ${dto.email}<br/>
-         <strong>Temporary password:</strong> ${password}</p>
-         <p>Please sign in at the admin panel and change this password immediately.</p>`,
+        'Votre compte administrateur Easy Shop Network',
+        `${this.mail.heading('Votre accès administrateur', 22)}
+         <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${dto.fullName},</p>
+         <p style="margin:0 0 16px;color:#6b6b6b;">
+           Un compte administrateur a été créé pour vous sur Easy Shop Network.
+         </p>
+         <div style="background:#f5f5f5;border-radius:12px;padding:16px 20px;margin-bottom:20px;">
+           <div style="color:#6b6b6b;font-size:13px;">Email</div>
+           <div style="color:#1f2124;font-weight:700;margin-bottom:8px;">${dto.email}</div>
+           <div style="color:#6b6b6b;font-size:13px;">Mot de passe temporaire</div>
+           <div style="color:#1f2124;font-weight:700;font-family:monospace;">${password}</div>
+         </div>
+         <div style="text-align:center;margin:8px 0 16px;">
+           ${this.mail.button('Se connecter', this.mail.appUrl('/admin'), 'primary')}
+         </div>
+         <p style="margin:0;color:#6b6b6b;font-size:13px;">
+           Pour votre sécurité, changez ce mot de passe dès votre première connexion.
+         </p>`,
       )
       .catch(() => undefined);
 

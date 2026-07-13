@@ -56,8 +56,17 @@ export class SavService {
 
     void this.mail.send(
       user.email,
-      `Ticket received: ${ticket.subject}`,
-      `<p>Your support ticket <b>#${ticket.id}</b> has been created. Our team will reply shortly.</p>`,
+      `Ticket reçu : ${ticket.subject}`,
+      `${this.mail.heading('Nous avons bien reçu votre demande', 22)}
+       <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${user.email.split('@')[0]},</p>
+       <p style="margin:0 0 20px;color:#6b6b6b;">
+         Votre ticket <strong style="color:#1f2124;">${ticket.subject}</strong>
+         (n° TKT-${String(ticket.number).padStart(3, '0')}) a bien été enregistré.
+         Notre équipe vous répondra dans les meilleurs délais.
+       </p>
+       <div style="text-align:center;margin:8px 0;">
+         ${this.mail.button('Voir mon ticket', this.mail.appUrl(`/account/support/${ticket.id}`), 'primary')}
+       </div>`,
     );
 
     return ticket;
@@ -165,11 +174,19 @@ export class SavService {
           .send(
             owner.email,
             `Réponse à votre ticket : ${ticket.subject}`,
-            `<p>Bonjour ${owner.firstName ?? ''},</p>
-             <p>Notre équipe a répondu à votre ticket <b>${ticket.subject}</b> :</p>
-             <blockquote>${content || '📎 Pièce jointe (image)'}</blockquote>
-             <p>Connectez-vous à votre espace client pour poursuivre la conversation.</p>
-             <p>— Easy Shop Network</p>`,
+            `${this.mail.heading('Nouvelle réponse à votre ticket', 22)}
+             <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${owner.firstName ?? ''},</p>
+             <p style="margin:0 0 12px;color:#6b6b6b;">
+               Notre équipe a répondu à votre ticket
+               <strong style="color:#1f2124;">${ticket.subject}</strong> :
+             </p>
+             <blockquote style="margin:0 0 20px;padding:12px 16px;border-left:3px solid #e6e6e6;
+               background:#f5f5f5;border-radius:6px;color:#1f2124;">
+               ${content || '📎 Pièce jointe (image)'}
+             </blockquote>
+             <div style="text-align:center;margin:8px 0;">
+               ${this.mail.button('Répondre', this.mail.appUrl(`/account/support/${ticket.id}`), 'primary')}
+             </div>`,
           )
           .catch(() => undefined);
       }

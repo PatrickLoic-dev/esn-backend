@@ -62,11 +62,7 @@ export class AuthService {
         },
       });
       void this.mail
-        .send(
-          dto.email,
-          'Welcome!',
-          `<p>Hi ${dto.firstName ?? ''}, your account has been created.</p>`,
-        )
+        .send(dto.email, 'Bienvenue chez Easy Shop Network', this.welcomeBody(dto.firstName))
         .catch(() => undefined);
       return { userId: user.id, ...this.issueTokens(user.id, user.email) };
     }
@@ -95,8 +91,8 @@ export class AuthService {
 
     void this.mail.send(
       dto.email,
-      'Welcome!',
-      `<p>Hi ${dto.firstName ?? ''}, your account has been created.</p>`,
+      'Bienvenue chez Easy Shop Network',
+      this.welcomeBody(dto.firstName),
     );
 
     // session is null when email confirmation is enabled in Supabase
@@ -129,12 +125,20 @@ export class AuthService {
       void this.mail
         .send(
           user.email,
-          'Nouvelle connexion à votre compte Easy Shop Network',
-          `<p>Bonjour ${user.firstName ?? ''},</p>
-           <p>Une connexion à votre compte vient d'avoir lieu le ${when}.</p>
-           <p>Si vous n'êtes pas à l'origine de cette connexion, changez votre
-           mot de passe immédiatement.</p>
-           <p>— Easy Shop Network</p>`,
+          'Nouvelle connexion à votre compte',
+          `${this.mail.heading('Nouvelle connexion', 22)}
+           <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${user.firstName ?? ''},</p>
+           <p style="margin:0 0 8px;color:#6b6b6b;">
+             Une connexion à votre compte Easy Shop Network vient d'avoir lieu le
+             <strong style="color:#1f2124;">${when}</strong>.
+           </p>
+           <p style="margin:0 0 20px;color:#6b6b6b;">
+             Si vous n'êtes pas à l'origine de cette connexion, réinitialisez votre
+             mot de passe immédiatement.
+           </p>
+           <div style="text-align:center;margin:8px 0;">
+             ${this.mail.button('Sécuriser mon compte', this.mail.appUrl('/auth/forgot-password'), 'primary')}
+           </div>`,
         )
         .catch(() => undefined);
       return this.issueTokens(user.id, user.email);
@@ -223,13 +227,16 @@ export class AuthService {
       .send(
         user.email,
         'Réinitialisation de votre mot de passe',
-        `<p style="margin:0 0 8px;">Bonjour ${user.firstName ?? ''},</p>
+        `${this.mail.heading('Réinitialiser votre mot de passe', 22)}
+         <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${user.firstName ?? ''},</p>
          <p style="margin:0 0 20px;color:#6b6b6b;">
            Vous avez demandé à réinitialiser le mot de passe de votre compte
            Easy Shop Network. Cliquez sur le bouton ci-dessous pour en choisir
            un nouveau. Ce lien expire dans 1 heure.
          </p>
-         <p style="margin:0 0 24px;">${this.mail.button('Réinitialiser mon mot de passe', link)}</p>
+         <div style="text-align:center;margin:8px 0 24px;">
+           ${this.mail.button('Réinitialiser mon mot de passe', link, 'primary')}
+         </div>
          <p style="margin:0;color:#6b6b6b;font-size:13px;">
            Si vous n'êtes pas à l'origine de cette demande, ignorez cet email :
            votre mot de passe restera inchangé.
@@ -281,12 +288,16 @@ export class AuthService {
       .send(
         user.email,
         'Votre mot de passe a été modifié',
-        `<p style="margin:0 0 8px;">Bonjour ${user.firstName ?? ''},</p>
+        `${this.mail.heading('Mot de passe modifié', 22)}
+         <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${user.firstName ?? ''},</p>
          <p style="margin:0 0 20px;color:#6b6b6b;">
            Le mot de passe de votre compte Easy Shop Network vient d'être
            modifié avec succès. Vous pouvez désormais vous connecter avec votre
            nouveau mot de passe.
          </p>
+         <div style="text-align:center;margin:8px 0 20px;">
+           ${this.mail.button('Se connecter', this.mail.appUrl('/auth/sign-in'), 'primary')}
+         </div>
          <p style="margin:0;color:#6b6b6b;font-size:13px;">
            Si vous n'êtes pas à l'origine de ce changement, contactez notre
            support immédiatement.
@@ -313,6 +324,20 @@ export class AuthService {
       );
     }
     return this.supabase.client;
+  }
+
+  private welcomeBody(firstName?: string | null): string {
+    return `${this.mail.heading('Bienvenue !', 26)}
+      <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${firstName ?? ''},</p>
+      <p style="margin:0 0 20px;color:#6b6b6b;">
+        Votre compte Easy Shop Network a bien été créé. Découvrez notre catalogue
+        et profitez d'une expérience d'achat simple et rapide.
+      </p>
+      <div style="text-align:center;margin:8px 0;">
+        ${this.mail.button('Découvrir la boutique', this.mail.appUrl('/shop'), 'primary')}
+        &nbsp;
+        ${this.mail.button('Mon compte', this.mail.appUrl('/account'), 'secondary')}
+      </div>`;
   }
 
   private issueTokens(userId: string, email: string) {
