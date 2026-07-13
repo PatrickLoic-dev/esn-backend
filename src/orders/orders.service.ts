@@ -31,7 +31,9 @@ export class OrdersService {
     const summaryRows: {
       name: string;
       quantity: number;
+      unitPrice: string;
       lineTotal: string;
+      imageUrl: string | null;
     }[] = [];
     let itemsSubtotal = new Prisma.Decimal(0);
 
@@ -70,7 +72,9 @@ export class OrdersService {
         summaryRows.push({
           name: product.name,
           quantity: item.quantity,
+          unitPrice: product.price.toFixed(2),
           lineTotal: lineTotal.toFixed(2),
+          imageUrl: product.imageUrl,
         });
       }
 
@@ -98,60 +102,108 @@ export class OrdersService {
     // Email de confirmation de commande (fire-and-forget, ne bloque pas)
     const ref = order.id.slice(0, 8).toUpperCase();
     const shippingCost = order.shippingCost ?? new Prisma.Decimal(0);
-    const cell = 'padding:8px 0;border-bottom:1px solid #e5e5e5;font-size:14px;';
+    const orderDate = new Date(order.createdAt).toLocaleDateString('fr-FR', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+    const ink = '#1f2124';
+    const sub = '#6b6b6b';
+    const line = '#e6e6e6';
+    const panel = '#f5f5f5';
+
+    // Lignes de produits (image, nom, qté, prix) — style neutre
     const rowsHtml = summaryRows
-      .map(
-        (r) => `<tr>
-          <td style="${cell}color:#333632;">
-            <strong>${r.quantity} ×</strong> ${r.name}
+      .map((r) => {
+        const img = r.imageUrl
+          ? `<img src="${r.imageUrl}" alt="${r.name}" width="56" height="56"
+              style="width:56px;height:56px;border-radius:8px;object-fit:cover;
+              border:1px solid ${line};display:block;" />`
+          : `<div style="width:56px;height:56px;border-radius:8px;background:${panel};
+              border:1px solid ${line};"></div>`;
+        return `<tr>
+          <td style="padding:14px 0;width:56px;vertical-align:top;">${img}</td>
+          <td style="padding:14px 12px;vertical-align:top;">
+            <div style="font-weight:700;color:${ink};font-size:14px;">${r.name}</div>
+            <div style="color:${sub};font-size:12px;margin-top:4px;">Qté : ${r.quantity}</div>
           </td>
-          <td style="${cell}text-align:right;white-space:nowrap;color:#333632;">
+          <td style="padding:14px 0;vertical-align:top;text-align:right;
+            white-space:nowrap;font-weight:700;color:${ink};font-size:14px;">
             ${r.lineTotal} FCFA
           </td>
-        </tr>`,
+        </tr>
+        <tr><td colspan="3" style="border-bottom:1px solid ${line};"></td></tr>`;
+      })
+      .join('');
+
+    // Adresse de livraison capturée au checkout
+    const a = (dto.shippingAddress ?? {}) as Record<string, string | undefined>;
+    const addressHtml = [
+      a.fullName,
+      a.address,
+      [a.postalCode, a.city].filter(Boolean).join(' '),
+      a.country,
+      a.phone,
+    ]
+      .filter(Boolean)
+      .map(
+        (l) =>
+          `<div style="color:${sub};font-size:13px;line-height:1.6;">${l}</div>`,
       )
       .join('');
+
+    const totalRow = (label: string, value: string, strong = false) =>
+      `<tr>
+        <td style="padding:${strong ? '12px' : '4px'} 0;color:${strong ? ink : sub};
+          font-size:${strong ? '16px' : '13px'};font-weight:${strong ? '800' : '400'};
+          ${strong ? `border-top:2px solid ${ink};` : ''}">${label}</td>
+        <td style="padding:${strong ? '12px' : '4px'} 0;text-align:right;
+          color:${strong ? ink : sub};font-size:${strong ? '16px' : '13px'};
+          font-weight:${strong ? '800' : '400'};
+          ${strong ? `border-top:2px solid ${ink};` : ''}">${value}</td>
+      </tr>`;
+
     void this.mail
       .send(
         order.user.email,
         `Confirmation de votre commande ${ref}`,
-        `<p style="margin:0 0 8px;">Bonjour ${order.user.firstName ?? ''},</p>
-         <p style="margin:0 0 20px;color:#6b6b6b;">
-           Merci pour votre commande ! Voici le récapitulatif.
-         </p>
-         <div style="background:#fff0f5;border:1px solid #e5e5e5;border-radius:10px;
-           padding:14px 18px;margin-bottom:22px;">
-           <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;
-             color:#6b6b6b;">Numéro de commande</span><br/>
-           <span style="font-size:20px;font-weight:800;color:#af0b46;">${ref}</span>
+        `<div style="text-align:center;">
+           ${this.mail.heading('Commande confirmée', 26)}
+           <p style="margin:8px 0 0;color:${sub};font-size:13px;letter-spacing:0.5px;">
+             COMMANDE #${ref} · ${orderDate}
+           </p>
          </div>
-         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
-           style="border-collapse:collapse;">
-           ${rowsHtml}
-           <tr>
-             <td style="padding:10px 0 4px;color:#6b6b6b;font-size:14px;">Sous-total</td>
-             <td style="padding:10px 0 4px;text-align:right;color:#6b6b6b;font-size:14px;">
-               ${itemsSubtotal.toFixed(2)} FCFA
-             </td>
-           </tr>
-           <tr>
-             <td style="padding:4px 0;color:#6b6b6b;font-size:14px;">Livraison</td>
-             <td style="padding:4px 0;text-align:right;color:#6b6b6b;font-size:14px;">
-               ${shippingCost.toFixed(2)} FCFA
-             </td>
-           </tr>
-           <tr>
-             <td style="padding:12px 0 0;font-size:16px;font-weight:800;color:#333632;
-               border-top:2px solid #333632;">Total</td>
-             <td style="padding:12px 0 0;text-align:right;font-size:16px;font-weight:800;
-               color:#ff0040;border-top:2px solid #333632;">
-               ${order.total.toFixed(2)} FCFA
-             </td>
-           </tr>
-         </table>
-         <p style="margin:24px 0 0;color:#6b6b6b;">
-           Vous pouvez suivre le statut de votre commande depuis votre espace client.
-         </p>`,
+         <p style="margin:24px 0 4px;color:${ink};">
+           Bonjour ${order.user.firstName ?? ''}, merci pour votre achat !
+         </p>
+         <p style="margin:0 0 20px;color:${sub};">
+           Nous préparons votre commande. Vous serez notifié dès son expédition.
+         </p>
+         <div style="text-align:center;margin:8px 0 28px;">
+           ${this.mail.button('Suivre ma commande', this.mail.appUrl('/account/orders'), 'primary')}
+           &nbsp;
+           ${this.mail.button('Continuer mes achats', this.mail.appUrl('/shop'), 'secondary')}
+         </div>
+
+         <div style="background:${panel};border-radius:12px;padding:20px 22px;">
+           ${this.mail.heading('Détail de la commande', 16)}
+           <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+             style="border-collapse:collapse;margin-top:8px;">
+             ${rowsHtml}
+             ${totalRow('Sous-total', `${itemsSubtotal.toFixed(2)} FCFA`)}
+             ${totalRow('Livraison', `${shippingCost.toFixed(2)} FCFA`)}
+             ${totalRow('Total', `${order.total.toFixed(2)} FCFA`, true)}
+           </table>
+         </div>
+
+         ${
+           addressHtml
+             ? `<div style="margin-top:28px;">
+                 ${this.mail.heading('Adresse de livraison', 16)}
+                 <div style="margin-top:8px;">${addressHtml}</div>
+               </div>`
+             : ''
+         }`,
       )
       .catch(() => undefined);
 

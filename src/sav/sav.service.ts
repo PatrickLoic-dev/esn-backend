@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   forwardRef,
   Inject,
@@ -113,6 +114,13 @@ export class SavService {
       throw new NotFoundException(`Ticket ${ticketId} not found`);
     }
     this.assertCanAccess(ticket.userId, user);
+
+    // Un ticket clôturé n'accepte plus de nouveaux messages (chat verrouillé).
+    if (ticket.status === TicketStatus.CLOSED) {
+      throw new BadRequestException(
+        'Ce ticket est clôturé — vous ne pouvez plus y envoyer de messages.',
+      );
+    }
 
     // a staff reply moves the ticket from OPEN to IN_PROGRESS
     const nextStatus =
