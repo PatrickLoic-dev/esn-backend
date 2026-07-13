@@ -53,7 +53,10 @@ export class SavController {
     @CurrentUser() user: JwtPayload,
     @Body() dto: CreateMessageDto,
   ) {
-    return this.savService.addMessage(id, user, dto.content);
+    return this.savService.addMessage(id, user, {
+      content: dto.content,
+      imageUrl: dto.imageUrl,
+    });
   }
 
   @Roles(Role.ADMIN)
