@@ -28,7 +28,12 @@ export class OrdersService {
 
   async create(userId: string, dto: CreateOrderDto) {
     // Lignes de récapitulatif (nom/quantité/prix) pour l'email de confirmation
-    const summaryLines: string[] = [];
+    const summaryRows: {
+      name: string;
+      quantity: number;
+      lineTotal: string;
+    }[] = [];
+    let itemsSubtotal = new Prisma.Decimal(0);
 
     const order = await this.prisma.$transaction(async (tx) => {
       let total = new Prisma.Decimal(0);
@@ -54,17 +59,19 @@ export class OrdersService {
           where: { id: product.id },
           data: { stock: { decrement: item.quantity } },
         });
-        total = total.add(product.price.mul(item.quantity));
+        const lineTotal = product.price.mul(item.quantity);
+        total = total.add(lineTotal);
+        itemsSubtotal = itemsSubtotal.add(lineTotal);
         items.push({
           productId: product.id,
           quantity: item.quantity,
           unitPrice: product.price,
         });
-        summaryLines.push(
-          `${item.quantity} × ${product.name} — ${product.price
-            .mul(item.quantity)
-            .toFixed(2)} FCFA`,
-        );
+        summaryRows.push({
+          name: product.name,
+          quantity: item.quantity,
+          lineTotal: lineTotal.toFixed(2),
+        });
       }
 
       const shippingCost = dto.shippingCost
@@ -90,16 +97,61 @@ export class OrdersService {
 
     // Email de confirmation de commande (fire-and-forget, ne bloque pas)
     const ref = order.id.slice(0, 8).toUpperCase();
+    const shippingCost = order.shippingCost ?? new Prisma.Decimal(0);
+    const cell = 'padding:8px 0;border-bottom:1px solid #e5e5e5;font-size:14px;';
+    const rowsHtml = summaryRows
+      .map(
+        (r) => `<tr>
+          <td style="${cell}color:#333632;">
+            <strong>${r.quantity} ×</strong> ${r.name}
+          </td>
+          <td style="${cell}text-align:right;white-space:nowrap;color:#333632;">
+            ${r.lineTotal} FCFA
+          </td>
+        </tr>`,
+      )
+      .join('');
     void this.mail
       .send(
         order.user.email,
         `Confirmation de votre commande ${ref}`,
-        `<p>Bonjour ${order.user.firstName ?? ''},</p>
-         <p>Merci ! Votre commande <b>${ref}</b> a bien été enregistrée.</p>
-         <ul>${summaryLines.map((l) => `<li>${l}</li>`).join('')}</ul>
-         <p><b>Total : ${order.total.toFixed(2)} FCFA</b></p>
-         <p>Vous pouvez suivre son statut depuis votre espace client.</p>
-         <p>— Easy Shop Network</p>`,
+        `<p style="margin:0 0 8px;">Bonjour ${order.user.firstName ?? ''},</p>
+         <p style="margin:0 0 20px;color:#6b6b6b;">
+           Merci pour votre commande ! Voici le récapitulatif.
+         </p>
+         <div style="background:#fff0f5;border:1px solid #e5e5e5;border-radius:10px;
+           padding:14px 18px;margin-bottom:22px;">
+           <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;
+             color:#6b6b6b;">Numéro de commande</span><br/>
+           <span style="font-size:20px;font-weight:800;color:#af0b46;">${ref}</span>
+         </div>
+         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+           style="border-collapse:collapse;">
+           ${rowsHtml}
+           <tr>
+             <td style="padding:10px 0 4px;color:#6b6b6b;font-size:14px;">Sous-total</td>
+             <td style="padding:10px 0 4px;text-align:right;color:#6b6b6b;font-size:14px;">
+               ${itemsSubtotal.toFixed(2)} FCFA
+             </td>
+           </tr>
+           <tr>
+             <td style="padding:4px 0;color:#6b6b6b;font-size:14px;">Livraison</td>
+             <td style="padding:4px 0;text-align:right;color:#6b6b6b;font-size:14px;">
+               ${shippingCost.toFixed(2)} FCFA
+             </td>
+           </tr>
+           <tr>
+             <td style="padding:12px 0 0;font-size:16px;font-weight:800;color:#333632;
+               border-top:2px solid #333632;">Total</td>
+             <td style="padding:12px 0 0;text-align:right;font-size:16px;font-weight:800;
+               color:#ff0040;border-top:2px solid #333632;">
+               ${order.total.toFixed(2)} FCFA
+             </td>
+           </tr>
+         </table>
+         <p style="margin:24px 0 0;color:#6b6b6b;">
+           Vous pouvez suivre le statut de votre commande depuis votre espace client.
+         </p>`,
       )
       .catch(() => undefined);
 
