@@ -74,6 +74,19 @@ export class SavService {
     });
   }
 
+  // Espace client : toujours limité aux tickets de l'utilisateur courant,
+  // même pour un compte staff (qui voit l'ensemble via le panneau admin).
+  findOwn(user: JwtPayload) {
+    return this.prisma.ticket.findMany({
+      where: { userId: user.sub },
+      include: {
+        _count: { select: { messages: true } },
+        ...TICKET_META_INCLUDE,
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
   async findOne(id: string, user: JwtPayload) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id },

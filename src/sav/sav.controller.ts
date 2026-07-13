@@ -33,6 +33,12 @@ export class SavController {
     return this.savService.findAllForUser(user);
   }
 
+  // Store account: only the current user's own tickets (static route before :id)
+  @Get('mine')
+  findMine(@CurrentUser() user: JwtPayload) {
+    return this.savService.findOwn(user);
+  }
+
   @Get(':id')
   findOne(
     @Param('id', ParseUUIDPipe) id: string,
