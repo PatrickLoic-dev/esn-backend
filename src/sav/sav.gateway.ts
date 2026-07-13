@@ -100,13 +100,14 @@ export class SavGateway implements OnGatewayConnection {
   @SubscribeMessage('ticket:message')
   async sendMessage(
     @ConnectedSocket() client: AuthedSocket,
-    @MessageBody() body: { ticketId: string; content: string },
+    @MessageBody()
+    body: { ticketId: string; content?: string; imageUrl?: string },
   ) {
     // addMessage persists and broadcasts to the room via emitMessage()
     const message = await this.savService.addMessage(
       body.ticketId,
       client.data.user,
-      body.content,
+      { content: body.content, imageUrl: body.imageUrl },
     );
     return message;
   }

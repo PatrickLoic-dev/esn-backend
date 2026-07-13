@@ -200,7 +200,9 @@ model TicketMessage {
   ticketId  String
   author    User     @relation(fields: [authorId], references: [id])
   authorId  String
-  content   String
+  content   String   @default("")
+  // Optional image attachment (e.g. a screenshot) hosted in the storage bucket
+  imageUrl  String?
   createdAt DateTime @default(now())
 }
 

@@ -106,7 +106,16 @@ export class SavService {
     return ticket;
   }
 
-  async addMessage(ticketId: string, user: JwtPayload, content: string) {
+  async addMessage(
+    ticketId: string,
+    user: JwtPayload,
+    input: { content?: string; imageUrl?: string },
+  ) {
+    const content = input.content?.trim() ?? '';
+    const imageUrl = input.imageUrl;
+    if (!content && !imageUrl) {
+      throw new BadRequestException('Un message ou une image est requis.');
+    }
     const ticket = await this.prisma.ticket.findUnique({
       where: { id: ticketId },
     });
@@ -130,7 +139,7 @@ export class SavService {
 
     const [message] = await this.prisma.$transaction([
       this.prisma.ticketMessage.create({
-        data: { ticketId, authorId: user.sub, content },
+        data: { ticketId, authorId: user.sub, content, imageUrl },
         include: MESSAGE_INCLUDE,
       }),
       this.prisma.ticket.update({
@@ -158,7 +167,7 @@ export class SavService {
             `Réponse à votre ticket : ${ticket.subject}`,
             `<p>Bonjour ${owner.firstName ?? ''},</p>
              <p>Notre équipe a répondu à votre ticket <b>${ticket.subject}</b> :</p>
-             <blockquote>${content}</blockquote>
+             <blockquote>${content || '📎 Pièce jointe (image)'}</blockquote>
              <p>Connectez-vous à votre espace client pour poursuivre la conversation.</p>
              <p>— Easy Shop Network</p>`,
           )

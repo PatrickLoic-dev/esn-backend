@@ -49,14 +49,17 @@ export class UploadsService {
     });
   }
 
-  async uploadImage(file: Express.Multer.File): Promise<{ url: string }> {
+  async uploadImage(
+    file: Express.Multer.File,
+    folder = 'products',
+  ): Promise<{ url: string }> {
     if (!this.s3) {
       throw new ServiceUnavailableException(
         "L'upload d'images n'est pas configuré sur ce serveur.",
       );
     }
     const ext = (extname(file.originalname) || '.jpg').toLowerCase();
-    const key = `products/${randomUUID()}${ext}`;
+    const key = `${folder}/${randomUUID()}${ext}`;
 
     try {
       await this.s3.send(
