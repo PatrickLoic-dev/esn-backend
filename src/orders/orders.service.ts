@@ -268,9 +268,14 @@ export class OrdersService {
         .send(
           updated.user.email,
           `Mise à jour de votre commande ${ref}`,
-          `<p>Bonjour ${updated.user.firstName ?? ''},</p>
-           <p>Votre commande <b>${ref}</b> ${STATUS_MESSAGE[status]}.</p>
-           <p>— Easy Shop Network</p>`,
+          `${this.mail.heading('Mise à jour de votre commande', 22)}
+           <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${updated.user.firstName ?? ''},</p>
+           <p style="margin:0 0 20px;color:#6b6b6b;">
+             Votre commande <strong style="color:#1f2124;">#${ref}</strong> ${STATUS_MESSAGE[status]}.
+           </p>
+           <div style="text-align:center;margin:8px 0;">
+             ${this.mail.button('Suivre ma commande', this.mail.appUrl('/account/orders'), 'primary')}
+           </div>`,
         )
         .catch(() => undefined);
     }
@@ -289,10 +294,15 @@ export class OrdersService {
     const ref = order.id.slice(0, 8).toUpperCase();
     await this.mail.send(
       order.user.email,
-      `Update on your order ${ref}`,
-      `<p>Hi ${order.user.firstName ?? ''},</p>
-       <p>Your order <b>${ref}</b> ${STATUS_MESSAGE[order.status]}.</p>
-       <p>Thank you for shopping with Easy Shop Network.</p>`,
+      `Mise à jour de votre commande ${ref}`,
+      `${this.mail.heading('Mise à jour de votre commande', 22)}
+       <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${order.user.firstName ?? ''},</p>
+       <p style="margin:0 0 20px;color:#6b6b6b;">
+         Votre commande <strong style="color:#1f2124;">#${ref}</strong> ${STATUS_MESSAGE[order.status]}.
+       </p>
+       <div style="text-align:center;margin:8px 0;">
+         ${this.mail.button('Suivre ma commande', this.mail.appUrl('/account/orders'), 'primary')}
+       </div>`,
     );
     return { sent: true };
   }

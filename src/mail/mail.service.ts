@@ -15,11 +15,10 @@ const BRAND = {
   bg: '#ffffff',
 };
 
-// Sora pour les titres (chargé via Google Fonts ; repli sans-serif si le
-// client mail ne charge pas les polices distantes).
-const HEADING_FONT =
-  "'Sora','Segoe UI',Helvetica,Arial,sans-serif";
-const BODY_FONT = "'Segoe UI',Helvetica,Arial,sans-serif";
+// Titres en Sora, corps en Inter (mêmes polices que le site, chargées via
+// Google Fonts ; repli sans-serif si le client mail bloque les polices).
+const HEADING_FONT = "'Sora','Segoe UI',Helvetica,Arial,sans-serif";
+const BODY_FONT = "'Inter','Segoe UI',Helvetica,Arial,sans-serif";
 
 @Injectable()
 export class MailService {
@@ -87,9 +86,12 @@ export class MailService {
   }
 
   private header(): string {
-    const logo = this.logoUrl
-      ? `<img src="${this.logoUrl}" alt="${BRAND.name}" height="44"
-          style="height:44px;display:inline-block;border:0;" />`
+    // Logo hébergé : MAIL_LOGO_URL en priorité, sinon le PNG servi par le
+    // frontend (public/logo.png). Repli wordmark si aucune URL n'est dispo.
+    const src = this.logoUrl ?? (this.frontendUrl ? `${this.frontendUrl}/logo.png` : '');
+    const logo = src
+      ? `<img src="${src}" alt="${BRAND.name}" height="52"
+          style="height:52px;display:inline-block;border:0;" />`
       : `<span style="font-family:${HEADING_FONT};font-weight:800;font-size:24px;
           letter-spacing:1px;color:${BRAND.ink};text-transform:uppercase;">
           Easy Shop <span style="color:${BRAND.primary};">Network</span></span>`;
@@ -97,10 +99,13 @@ export class MailService {
   }
 
   private footer(): string {
+    // Icônes monochromes hébergées par le frontend (rendues partout, contrairement
+    // au SVG inline que Gmail supprime).
     const feature = (icon: string, label: string) =>
-      `<td align="center" style="padding:6px;font-family:${BODY_FONT};font-size:11px;
+      `<td align="center" style="padding:14px 6px;font-family:${BODY_FONT};font-size:11px;
         color:${BRAND.sub};text-transform:uppercase;letter-spacing:0.5px;">
-        <div style="font-size:22px;line-height:1;">${icon}</div>
+        <img src="${this.appUrl(`/mail/${icon}.png`)}" width="26" height="26"
+          alt="" style="display:inline-block;border:0;opacity:0.8;" />
         <div style="margin-top:6px;">${label}</div></td>`;
     const nav = (label: string, path: string) =>
       `<a href="${this.appUrl(path)}" style="color:${BRAND.ink};text-decoration:none;
@@ -109,10 +114,10 @@ export class MailService {
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
         style="background:${BRAND.panel};margin-top:24px;">
         <tr>
-          ${feature('✅', 'Quality Assurance')}
-          ${feature('🚚', 'Free Shipping')}
-          ${feature('💳', 'Easy Payments')}
-          ${feature('↩️', 'Quick Return')}
+          ${feature('quality', 'Quality Assurance')}
+          ${feature('shipping', 'Free Shipping')}
+          ${feature('payments', 'Easy Payments')}
+          ${feature('returns', 'Quick Return')}
         </tr>
       </table>
       <div style="text-align:center;padding:20px 24px 8px;">
@@ -135,7 +140,7 @@ export class MailService {
   <meta name="color-scheme" content="light only" />
   <title>${title}</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap');
   </style>
 </head>
 <body style="margin:0;padding:0;background:${BRAND.panel};">
