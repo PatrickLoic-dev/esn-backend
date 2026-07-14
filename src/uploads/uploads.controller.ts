@@ -34,6 +34,23 @@ export class UploadsController {
     return this.uploads.uploadImage(file);
   }
 
+  // Any authenticated user: upload their profile picture.
+  @Post('avatar')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadAvatar(
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5 MB
+          new FileTypeValidator({ fileType: /^image\/(png|jpe?g|webp|gif)$/ }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+  ) {
+    return this.uploads.uploadImage(file, 'avatars');
+  }
+
   // Any authenticated user (incl. customers): upload a support screenshot.
   @Post('support-image')
   @UseInterceptors(FileInterceptor('file'))
