@@ -51,7 +51,7 @@ export class AuthService {
         where: { email: dto.email },
       });
       if (existing) {
-        throw new BadRequestException('Email already registered');
+        throw new BadRequestException('Cette adresse email est déjà utilisée.');
       }
       const user = await this.prisma.user.create({
         data: {
@@ -111,10 +111,10 @@ export class AuthService {
         !user?.passwordHash ||
         !(await bcrypt.compare(dto.password, user.passwordHash))
       ) {
-        throw new UnauthorizedException('Invalid credentials');
+        throw new UnauthorizedException('Email ou mot de passe incorrect.');
       }
       if (!user.isActive) {
-        throw new UnauthorizedException('This account has been deactivated');
+        throw new UnauthorizedException('Ce compte a été désactivé.');
       }
       await this.prisma.user.update({
         where: { id: user.id },
@@ -150,7 +150,7 @@ export class AuthService {
         password: dto.password,
       });
     if (error || !data.session) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Email ou mot de passe incorrect.');
     }
     return this.toTokens(data.session);
   }
@@ -163,7 +163,7 @@ export class AuthService {
         }) as { sub: string; email: string };
         return this.issueTokens(payload.sub, payload.email);
       } catch {
-        throw new UnauthorizedException('Invalid refresh token');
+        throw new UnauthorizedException('Votre session a expiré, veuillez vous reconnecter.');
       }
     }
 
@@ -171,7 +171,7 @@ export class AuthService {
       refresh_token: dto.refreshToken,
     });
     if (error || !data.session) {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new UnauthorizedException('Votre session a expiré, veuillez vous reconnecter.');
     }
     return this.toTokens(data.session);
   }
@@ -187,7 +187,7 @@ export class AuthService {
       !user?.passwordHash ||
       !(await bcrypt.compare(dto.currentPassword, user.passwordHash))
     ) {
-      throw new UnauthorizedException('Current password is incorrect');
+      throw new UnauthorizedException('Le mot de passe actuel est incorrect.');
     }
     await this.prisma.user.update({
       where: { id: userId },
