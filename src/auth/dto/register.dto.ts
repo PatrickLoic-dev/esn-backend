@@ -15,4 +15,9 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   lastName?: string;
+
+  // Code de parrainage MLM (optionnel) saisi à l'inscription
+  @IsOptional()
+  @IsString()
+  referralCode?: string;
 }

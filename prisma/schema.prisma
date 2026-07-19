@@ -76,8 +76,39 @@ model User {
   messages  TicketMessage[]
   payments  Payment[]
   reviews   Review[]
+  // ---- Couche MLM / affiliation (points, 3 niveaux) ----
+  // Code de parrainage unique à partager (ex. ESN-7K2M9Q)
+  referralCode  String?  @unique
+  // Parrain direct (upline niveau 1). Construit l'arbre de parrainage.
+  referredBy    User?    @relation("Referral", fields: [referredById], references: [id])
+  referredById  String?
+  referrals     User[]   @relation("Referral")
+  // Solde de points cumulés (dénormalisé ; l'historique est dans le ledger)
+  pointsBalance Int      @default(0)
+  pointsEarned    ReferralCommission[] @relation("Beneficiary")
+  pointsGenerated ReferralCommission[] @relation("Source")
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
+}
+
+// Ledger des points MLM : une ligne par palier crédité lors d'un achat.
+model ReferralCommission {
+  id            String   @id @default(uuid())
+  // Bénéficiaire (membre de la lignée ascendante) crédité des points
+  beneficiary   User     @relation("Beneficiary", fields: [beneficiaryId], references: [id])
+  beneficiaryId String
+  // Filleul dont l'achat a généré les points
+  source        User     @relation("Source", fields: [sourceId], references: [id])
+  sourceId      String
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId       String
+  level         Int      // 1 (direct), 2 ou 3
+  points        Int
+  createdAt     DateTime @default(now())
+
+  // Idempotence : un bénéficiaire ne peut être crédité qu'une fois par commande
+  @@unique([orderId, beneficiaryId])
+  @@index([beneficiaryId])
 }
 
 model Review {
@@ -143,6 +174,7 @@ model Order {
   items     OrderItem[]
   payments  Payment[]
   tickets   Ticket[]
+  referralCommissions ReferralCommission[]
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 }

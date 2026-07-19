@@ -7,6 +7,7 @@ import {
 import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
+import { MlmService } from '../mlm/mlm.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { JwtPayload } from '../auth/decorators/current-user.decorator';
 import { isStaff } from '../auth/roles.util';
@@ -24,6 +25,7 @@ export class OrdersService {
   constructor(
     private prisma: PrismaService,
     private mail: MailService,
+    private mlm: MlmService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto) {
@@ -205,6 +207,11 @@ export class OrdersService {
              : ''
          }`,
       )
+      .catch(() => undefined);
+
+    // Couche MLM : crédite la lignée ascendante en points (fire-and-forget).
+    void this.mlm
+      .awardForOrder(order.id, userId, order.total)
       .catch(() => undefined);
 
     return order;

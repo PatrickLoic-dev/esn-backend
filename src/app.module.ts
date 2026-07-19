@@ -14,6 +14,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { SavModule } from './sav/sav.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { UploadsModule } from './uploads/uploads.module';
+import { MlmModule } from './mlm/mlm.module';
 import { HealthModule } from './health/health.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
@@ -46,6 +47,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     SavModule,
     AnalyticsModule,
     UploadsModule,
+    MlmModule,
     HealthModule,
   ],
   providers: [
