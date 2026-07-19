@@ -167,6 +167,8 @@ model Order {
   shippingAddress Json?
   shippingMethod  String?
   shippingCost    Decimal? @db.Decimal(10, 2)
+  // Points MLM utilisés pour payer une partie de cette commande (100 pts = 10 FCFA)
+  pointsUsed      Int      @default(0)
   // set by admin when fulfilling
   trackingNumber  String?
   carrier         String?

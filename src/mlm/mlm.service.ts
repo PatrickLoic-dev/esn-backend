@@ -8,6 +8,16 @@ import { PrismaService } from '../prisma/prisma.service';
 const LEVEL_RATES = [0.1, 0.05, 0.02];
 const MAX_LEVELS = LEVEL_RATES.length;
 
+// Conversion : 100 points = 10 FCFA, soit 1 point = 0,1 FCFA.
+export const POINT_VALUE_FCFA = 0.1;
+export const pointsToFcfa = (points: number) => points * POINT_VALUE_FCFA;
+
+export type AwardedPoints = {
+  level: number;
+  beneficiaryId: string;
+  points: number;
+};
+
 @Injectable()
 export class MlmService {
   private readonly logger = new Logger(MlmService.name);
@@ -71,18 +81,21 @@ export class MlmService {
     });
   }
 
-  // Crédite la lignée ascendante (jusqu'à 3 niveaux) des points d'une commande.
-  // Idempotent grâce à @@unique([orderId, beneficiaryId]).
+  // Crédite la lignée ascendante (jusqu'à 3 niveaux) des points d'une commande
+  // et renvoie le détail des attributions (pour l'email de confirmation).
+  // `commissionable` = montant cash réellement payé (hors part payée en points)
+  // afin de NE PAS sur-attribuer de points. Idempotent (@@unique orderId+bénéf).
   async awardForOrder(
     orderId: string,
     buyerId: string,
-    orderTotal: Prisma.Decimal | number,
-  ): Promise<void> {
+    commissionable: Prisma.Decimal | number,
+  ): Promise<AwardedPoints[]> {
+    const awarded: AwardedPoints[] = [];
     const total =
-      orderTotal instanceof Prisma.Decimal
-        ? orderTotal.toNumber()
-        : orderTotal;
-    if (!Number.isFinite(total) || total <= 0) return;
+      commissionable instanceof Prisma.Decimal
+        ? commissionable.toNumber()
+        : commissionable;
+    if (!Number.isFinite(total) || total <= 0) return awarded;
 
     // Remonte la chaîne parrain par parrain.
     let currentId: string = buyerId;
@@ -116,6 +129,7 @@ export class MlmService {
               data: { pointsBalance: { increment: points } },
             }),
           ]);
+          awarded.push({ level, beneficiaryId: uplineId, points });
         } catch (err) {
           // Doublon (commande déjà traitée pour ce bénéficiaire) → on ignore.
           if (
@@ -130,6 +144,73 @@ export class MlmService {
       }
       currentId = uplineId;
     }
+    return awarded;
+  }
+
+  // Admin : vue d'ensemble du réseau MLM (participants + stats globales).
+  async getNetwork() {
+    const users = await this.prisma.user.findMany({
+      where: {
+        OR: [
+          { referredById: { not: null } },
+          { referrals: { some: {} } },
+          { pointsBalance: { gt: 0 } },
+        ],
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        referralCode: true,
+        pointsBalance: true,
+        createdAt: true,
+        referredBy: {
+          select: { firstName: true, lastName: true, email: true },
+        },
+        _count: { select: { referrals: true } },
+      },
+      orderBy: { pointsBalance: 'desc' },
+    });
+
+    const grouped = await this.prisma.referralCommission.groupBy({
+      by: ['beneficiaryId'],
+      _sum: { points: true },
+    });
+    const earnedByUser = new Map(
+      grouped.map((g) => [g.beneficiaryId, g._sum.points ?? 0]),
+    );
+
+    const totalDistributed = await this.prisma.referralCommission.aggregate({
+      _sum: { points: true },
+      _count: { _all: true },
+    });
+
+    const label = (u: {
+      firstName: string | null;
+      lastName: string | null;
+      email: string;
+    }) => [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email;
+
+    return {
+      stats: {
+        participants: users.length,
+        withReferrer: users.filter((u) => u.referredBy).length,
+        pointsDistributed: totalDistributed._sum.points ?? 0,
+        commissions: totalDistributed._count._all,
+      },
+      members: users.map((u) => ({
+        id: u.id,
+        name: label(u),
+        email: u.email,
+        referralCode: u.referralCode,
+        parrain: u.referredBy ? label(u.referredBy) : null,
+        directReferrals: u._count.referrals,
+        pointsBalance: u.pointsBalance,
+        pointsEarned: earnedByUser.get(u.id) ?? 0,
+        joinedAt: u.createdAt,
+      })),
+    };
   }
 
   // Tableau de bord affiliation du membre courant.
