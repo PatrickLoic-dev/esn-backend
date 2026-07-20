@@ -1,16 +1,24 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 
-// Barème MLM : points = pourcentage de la valeur de la commande, par niveau.
-// Niveau 1 = filleul direct, 2 = filleul de filleul, 3 = 3e génération.
-const LEVEL_RATES = [0.1, 0.05, 0.02];
-const MAX_LEVELS = LEVEL_RATES.length;
+const MAX_LEVELS = 3;
 
-// Conversion : 100 points = 10 FCFA, soit 1 point = 0,1 FCFA.
+// Valeur par défaut d'un point (100 pts = 10 FCFA) — repli si config absente.
 export const POINT_VALUE_FCFA = 0.1;
 export const pointsToFcfa = (points: number) => points * POINT_VALUE_FCFA;
+
+export type MlmConfigValues = {
+  level1Rate: number;
+  level2Rate: number;
+  level3Rate: number;
+  pointValueFcfa: number;
+  maxDirectReferrals: number;
+};
+
+export type UpdateMlmConfig = Partial<MlmConfigValues>;
 
 export type AwardedPoints = {
   level: number;
@@ -22,7 +30,42 @@ export type AwardedPoints = {
 export class MlmService {
   private readonly logger = new Logger(MlmService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private mail: MailService,
+  ) {}
+
+  // Config barème (ligne unique "default"), créée à la volée avec les défauts.
+  getConfig() {
+    return this.prisma.mlmConfig.upsert({
+      where: { id: 'default' },
+      create: {},
+      update: {},
+    });
+  }
+
+  // Édition du barème (admin/modérateur). Valide les bornes.
+  async updateConfig(dto: UpdateMlmConfig) {
+    const rate = (v?: number) => v === undefined || (v >= 0 && v <= 1);
+    if (
+      !rate(dto.level1Rate) ||
+      !rate(dto.level2Rate) ||
+      !rate(dto.level3Rate)
+    ) {
+      throw new BadRequestException('Les taux doivent être compris entre 0 et 1.');
+    }
+    if (dto.pointValueFcfa !== undefined && dto.pointValueFcfa <= 0) {
+      throw new BadRequestException('La valeur du point doit être positive.');
+    }
+    if (dto.maxDirectReferrals !== undefined && dto.maxDirectReferrals < 0) {
+      throw new BadRequestException('Le nombre de filleuls doit être positif.');
+    }
+    return this.prisma.mlmConfig.upsert({
+      where: { id: 'default' },
+      create: { ...dto },
+      update: { ...dto },
+    });
+  }
 
   // Génère un code de parrainage lisible (ESN-XXXXXX), unique en base.
   private newCode(): string {
@@ -97,6 +140,9 @@ export class MlmService {
         : commissionable;
     if (!Number.isFinite(total) || total <= 0) return awarded;
 
+    const config = await this.getConfig();
+    const rates = [config.level1Rate, config.level2Rate, config.level3Rate];
+
     // Remonte la chaîne parrain par parrain.
     let currentId: string = buyerId;
     const seen = new Set<string>([buyerId]); // garde-fou anti-cycle
@@ -111,7 +157,7 @@ export class MlmService {
       if (!uplineId || seen.has(uplineId)) break;
       seen.add(uplineId);
 
-      const points = Math.round(total * LEVEL_RATES[level - 1]);
+      const points = Math.round(total * rates[level - 1]);
       if (points > 0) {
         try {
           await this.prisma.$transaction([
@@ -130,6 +176,13 @@ export class MlmService {
             }),
           ]);
           awarded.push({ level, beneficiaryId: uplineId, points });
+          // Email dédié au parrain (sans récap de commande) + CTA d'invitation.
+          void this.notifyBeneficiary(
+            uplineId,
+            level,
+            points,
+            config.maxDirectReferrals,
+          ).catch(() => undefined);
         } catch (err) {
           // Doublon (commande déjà traitée pour ce bénéficiaire) → on ignore.
           if (
@@ -145,6 +198,59 @@ export class MlmService {
       currentId = uplineId;
     }
     return awarded;
+  }
+
+  // Email envoyé UNIQUEMENT au parrain (bénéficiaire) : points gagnés + CTA
+  // pour inviter davantage de filleuls s'il reste de la place. Aucun récap
+  // de commande (données de l'acheteur non exposées).
+  private async notifyBeneficiary(
+    beneficiaryId: string,
+    level: number,
+    points: number,
+    maxDirect: number,
+  ): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: beneficiaryId },
+      select: {
+        email: true,
+        firstName: true,
+        _count: { select: { referrals: true } },
+      },
+    });
+    if (!user) return;
+
+    // 0 = illimité ; sinon places restantes
+    const slotsLeft =
+      maxDirect > 0 ? Math.max(0, maxDirect - user._count.referrals) : null;
+    const hasRoom = slotsLeft === null || slotsLeft > 0;
+
+    const roomLine =
+      slotsLeft === null
+        ? `Vous pouvez inviter autant de filleuls que vous le souhaitez.`
+        : slotsLeft > 0
+          ? `Il vous reste <strong>${slotsLeft} place${slotsLeft > 1 ? 's' : ''}</strong> de filleul direct.`
+          : `Vous avez atteint votre nombre maximum de filleuls directs.`;
+
+    const cta = hasRoom
+      ? `<div style="text-align:center;margin:8px 0;">
+           ${this.mail.button('Inviter des filleuls', this.mail.appUrl('/account/affiliation'), 'primary')}
+         </div>`
+      : `<div style="text-align:center;margin:8px 0;">
+           ${this.mail.button('Voir mon affiliation', this.mail.appUrl('/account/affiliation'), 'secondary')}
+         </div>`;
+
+    void this.mail.send(
+      user.email,
+      `Vous avez gagné ${points} points !`,
+      `${this.mail.heading('Nouveaux points d’affiliation', 22)}
+       <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${user.firstName ?? ''},</p>
+       <p style="margin:0 0 8px;color:#6b6b6b;">
+         Un achat réalisé dans votre réseau (niveau ${level}) vient de vous
+         rapporter <strong style="color:#1f2124;">+${points} points</strong>. 🎉
+       </p>
+       <p style="margin:0 0 20px;color:#6b6b6b;">${roomLine}</p>
+       ${cta}`,
+    );
   }
 
   // Admin : vue d'ensemble du réseau MLM (participants + stats globales).
@@ -216,6 +322,8 @@ export class MlmService {
   // Tableau de bord affiliation du membre courant.
   async getSummary(userId: string) {
     const code = await this.ensureReferralCode(userId);
+    const config = await this.getConfig();
+    const rates = [config.level1Rate, config.level2Rate, config.level3Rate];
     const [user, directReferrals, commissions, levelCounts] = await Promise.all(
       [
         this.prisma.user.findUnique({
@@ -258,7 +366,7 @@ export class MlmService {
       const row = levelCounts.find((r) => r.level === lvl);
       return {
         level: lvl,
-        rate: LEVEL_RATES[lvl - 1],
+        rate: rates[lvl - 1],
         points: row?._sum.points ?? 0,
         count: row?._count._all ?? 0,
       };
@@ -267,6 +375,8 @@ export class MlmService {
     return {
       referralCode: code,
       pointsBalance: user?.pointsBalance ?? 0,
+      pointValueFcfa: config.pointValueFcfa,
+      maxDirectReferrals: config.maxDirectReferrals,
       directReferralCount: directReferrals.length,
       byLevel,
       referrals: directReferrals.map((r) => ({

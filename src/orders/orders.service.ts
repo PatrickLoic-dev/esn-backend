@@ -7,7 +7,7 @@ import {
 import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
-import { MlmService, POINT_VALUE_FCFA } from '../mlm/mlm.service';
+import { MlmService } from '../mlm/mlm.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { JwtPayload } from '../auth/decorators/current-user.decorator';
 import { isStaff } from '../auth/roles.util';
@@ -41,6 +41,9 @@ export class OrdersService {
     // Points MLM utilisés (redemption) — calculés dans la transaction.
     let pointsUsed = 0;
     let pointsDiscount = new Prisma.Decimal(0);
+    // Barème courant (valeur du point à la dépense).
+    const mlmConfig = await this.mlm.getConfig();
+    const pointValue = mlmConfig.pointValueFcfa;
 
     const order = await this.prisma.$transaction(async (tx) => {
       let total = new Prisma.Decimal(0);
@@ -96,10 +99,10 @@ export class OrdersService {
           where: { id: userId },
           select: { pointsBalance: true },
         });
-        const maxByOrder = Math.floor(grossTotal.toNumber() / POINT_VALUE_FCFA);
+        const maxByOrder = Math.floor(grossTotal.toNumber() / pointValue);
         pointsUsed = Math.min(requested, buyer?.pointsBalance ?? 0, maxByOrder);
         if (pointsUsed > 0) {
-          pointsDiscount = new Prisma.Decimal(pointsUsed).mul(POINT_VALUE_FCFA);
+          pointsDiscount = new Prisma.Decimal(pointsUsed).mul(pointValue);
           await tx.user.update({
             where: { id: userId },
             data: { pointsBalance: { decrement: pointsUsed } },
@@ -126,18 +129,16 @@ export class OrdersService {
       });
     });
 
-    // Couche MLM : on crédite la lignée AVANT l'email pour pouvoir y afficher
-    // le récap des points générés pour le parrain. Base = cash payé sur les
-    // articles (hors part réglée en points) → pas de sur-attribution.
+    // Couche MLM : crédite la lignée ascendante (fire-and-forget). Le service
+    // envoie lui-même un email dédié à chaque parrain. Base = cash payé sur les
+    // articles (hors part réglée en points) → pas de sur-attribution. Le récap
+    // des points générés N'apparaît PAS dans l'email de commande de l'acheteur.
     const commissionBase = pointsDiscount.gte(itemsSubtotal)
       ? new Prisma.Decimal(0)
       : itemsSubtotal.sub(pointsDiscount);
-    const awarded = await this.mlm
+    void this.mlm
       .awardForOrder(order.id, userId, commissionBase)
-      .catch(() => [] as { level: number; points: number }[]);
-    const parrainPoints = awarded
-      .filter((a) => a.level === 1)
-      .reduce((s, a) => s + a.points, 0);
+      .catch(() => undefined);
 
     // Email de confirmation de commande (fire-and-forget, ne bloque pas)
     const ref = order.id.slice(0, 8).toUpperCase();
@@ -243,18 +244,6 @@ export class OrdersService {
              ${totalRow('Total', `${order.total.toFixed(2)} FCFA`, true)}
            </table>
          </div>
-
-         ${
-           parrainPoints > 0
-             ? `<div style="margin-top:20px;background:${panel};border-radius:12px;
-                 padding:16px 20px;">
-                 <div style="font-size:13px;color:${sub};">Programme d'affiliation</div>
-                 <div style="font-weight:700;color:${ink};margin-top:2px;">
-                   Votre parrain a gagné +${parrainPoints} points grâce à cette commande. 🎁
-                 </div>
-               </div>`
-             : ''
-         }
 
          ${
            addressHtml

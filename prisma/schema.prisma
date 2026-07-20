@@ -91,6 +91,20 @@ model User {
   updatedAt DateTime        @updatedAt
 }
 
+// Barème MLM configurable (ligne unique). Éditable par admin/modérateur.
+model MlmConfig {
+  id                 String   @id @default("default")
+  // Taux de gain de points par niveau (fraction de la valeur commande)
+  level1Rate         Float    @default(0.10)
+  level2Rate         Float    @default(0.05)
+  level3Rate         Float    @default(0.02)
+  // Valeur d'un point à la dépense, en FCFA (0,1 => 100 pts = 10 FCFA)
+  pointValueFcfa     Float    @default(0.10)
+  // Nombre maximal de filleuls directs par membre (0 = illimité)
+  maxDirectReferrals Int      @default(3)
+  updatedAt          DateTime @updatedAt
+}
+
 // Ledger des points MLM : une ligne par palier crédité lors d'un achat.
 model ReferralCommission {
   id            String   @id @default(uuid())
