@@ -215,3 +215,24 @@ model AnalyticsEvent {
 
   @@index([name, createdAt])
 }
+
+// Agrégat quotidien de disponibilité par service (pour la heatmap façon commits).
+model ServiceDay {
+  service String
+  day     String // YYYY-MM-DD (UTC)
+  up      Int    @default(0)
+  total   Int    @default(0)
+
+  @@id([service, day])
+}
+
+// Historique des incidents (downtime) par service.
+model ServiceIncident {
+  id         String    @id @default(uuid())
+  service    String
+  error      String?
+  startedAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@index([service, startedAt])
+}
