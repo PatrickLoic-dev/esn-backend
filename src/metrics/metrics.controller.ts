@@ -9,6 +9,7 @@ import { timingSafeEqual } from 'crypto';
 import { Public } from '../auth/decorators/public.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { MetricsService } from './metrics.service';
+import { StatusService } from './status.service';
 
 // Page de métriques accessible UNIQUEMENT via un lien secret : /metrics/:token
 // (token = variable d'environnement METRICS_TOKEN). Pas de session requise.
@@ -18,6 +19,7 @@ export class MetricsController {
     private metrics: MetricsService,
     private prisma: PrismaService,
     private config: ConfigService,
+    private status: StatusService,
   ) {}
 
   @Public()
@@ -44,7 +46,18 @@ export class MetricsController {
       database = 'down';
     }
 
-    return { database, counts, ...this.metrics.snapshot() };
+    // Résilient : si les tables de statut n'existent pas encore (schéma non
+    // appliqué en prod), on dégrade sans faire échouer toute la page.
+    let status: Awaited<ReturnType<StatusService['getStatus']>> | {
+      services: never[];
+      incidents: never[];
+    } = { services: [], incidents: [] };
+    try {
+      status = await this.status.getStatus();
+    } catch {
+      /* tables de statut absentes : section vide */
+    }
+    return { database, counts, ...this.metrics.snapshot(), ...status };
   }
 }
 
