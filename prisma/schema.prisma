@@ -100,6 +100,11 @@ model Category {
   description String?
   // color tag shown on the storefront/admin (Red|Blue|Green|Purple|Orange|Pink)
   color       String    @default("Red")
+  // Icon key (from the frontend's icon registry) shown ONLY on the homepage
+  // "Shop by Category" section, and only when `featured` is true.
+  icon        String?
+  // Whether this category appears in the homepage "Shop by Category" section.
+  featured    Boolean   @default(false)
   isActive    Boolean   @default(true)
   products    Product[]
   createdAt   DateTime  @default(now())
