@@ -6,8 +6,8 @@ import { Resend } from 'resend';
 // reste neutre (encre / gris / blanc) comme la maquette de référence.
 const BRAND = {
   name: 'Easy Shop Network',
-  primary: '#ff0040', // action principale
-  primaryDark: '#af0b46', // action secondaire
+  primary: '#1f9d55', // action principale
+  primaryDark: '#14703c', // action secondaire
   ink: '#1f2124',
   sub: '#6b6b6b',
   line: '#e6e6e6',
