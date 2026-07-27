@@ -40,17 +40,17 @@ export class PrismaService
   private readonly logger = new Logger(PrismaService.name);
 
   async onModuleInit() {
-    // Connexion NON bloquante au démarrage : si la base est momentanément
-    // injoignable (pooler Supabase, réseau…), l'application démarre quand même.
-    // La liveness (/api/health) répond, la readiness (/api/health/ready) reste
-    // en 503 jusqu'à ce que la base soit joignable. Prisma se (re)connectera
-    // paresseusement à la première requête réussie. Cela évite un crash-loop
-    // du conteneur au boot.
+    // Non-blocking connection at startup: if the database is momentarily
+    // unreachable (Supabase pooler, network…), the app starts anyway.
+    // Liveness (/api/health) responds, readiness (/api/health/ready) stays
+    // at 503 until the database is reachable. Prisma will (re)connect lazily
+    // on the first successful request. This avoids a container crash-loop
+    // at boot.
     try {
       await this.$connect();
     } catch (err) {
       this.logger.error(
-        `Connexion initiale à la base impossible, démarrage quand même : ${
+        `Initial database connection failed, starting anyway: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );

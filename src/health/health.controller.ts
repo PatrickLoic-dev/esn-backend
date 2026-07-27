@@ -4,11 +4,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../auth/decorators/public.decorator';
 
 /**
- * Sondes de santé pour l'orchestrateur (Docker / Kubernetes).
- * - `/api/health`       : liveness — le process répond, sans toucher la base.
- * - `/api/health/ready` : readiness — vérifie que la base est joignable.
- * Les deux routes sont publiques (pas de JWT) pour être appelées par le
- * HEALTHCHECK du conteneur et le load balancer.
+ * Health probes for the orchestrator (Docker / Kubernetes).
+ * - `/api/health`       : liveness — the process responds, without touching the database.
+ * - `/api/health/ready` : readiness — checks that the database is reachable.
+ * Both routes are public (no JWT) so they can be called by the container's
+ * HEALTHCHECK and the load balancer.
  */
 @ApiTags('health')
 @Controller('health')
@@ -25,12 +25,12 @@ export class HealthController {
   @Get('ready')
   async readiness() {
     try {
-      // Requête minimale : confirme que la connexion Postgres est établie.
+      // Minimal query: confirms the Postgres connection is established.
       await this.prisma.$queryRaw`SELECT 1`;
       return { status: 'ready', database: 'up' };
     } catch {
-      // 503 : l'instance ne doit pas recevoir de trafic tant que la base
-      // n'est pas joignable.
+      // 503: the instance must not receive traffic while the database isn't
+      // reachable.
       throw new ServiceUnavailableException({
         status: 'not-ready',
         database: 'down',

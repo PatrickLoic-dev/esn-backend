@@ -45,16 +45,16 @@ export class QuotesService {
     void this.mail
       .send(
         user.email,
-        `Votre demande de devis — ${product.name}`,
-        `${this.mail.heading('Demande de devis reçue', 22)}
-         <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${quote.user.firstName ?? ''},</p>
+        `Your quote request — ${product.name}`,
+        `${this.mail.heading('Quote request received', 22)}
+         <p style="margin:20px 0 4px;color:#1f2124;">Hello ${quote.user.firstName ?? ''},</p>
          <p style="margin:0 0 20px;color:#6b6b6b;">
-           Votre demande de devis pour <strong style="color:#1f2124;">${product.name}</strong>
-           (quantité : ${dto.quantity}) a bien été enregistrée. Notre équipe vous
-           recontactera avec une proposition dans les meilleurs délais.
+           Your quote request for <strong style="color:#1f2124;">${product.name}</strong>
+           (quantity: ${dto.quantity}) has been recorded. Our team will get back to
+           you with a proposal as soon as possible.
          </p>
          <div style="text-align:center;margin:8px 0;">
-           ${this.mail.button('Voir ma demande', this.mail.appUrl(`/account/quotes`), 'primary')}
+           ${this.mail.button('View my request', this.mail.appUrl(`/account/quotes`), 'primary')}
          </div>`,
       )
       .catch(() => undefined);
@@ -117,24 +117,24 @@ export class QuotesService {
       void this.mail
         .send(
           quote.user.email,
-          `Votre devis pour ${quote.product.name} a été mis à jour`,
-          `${this.mail.heading('Mise à jour de votre devis', 22)}
-           <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${quote.user.firstName ?? ''},</p>
+          `Your quote for ${quote.product.name} has been updated`,
+          `${this.mail.heading('Update on your quote', 22)}
+           <p style="margin:20px 0 4px;color:#1f2124;">Hello ${quote.user.firstName ?? ''},</p>
            <p style="margin:0 0 12px;color:#6b6b6b;">
-             Votre demande de devis pour <strong style="color:#1f2124;">${quote.product.name}</strong>
-             a été mise à jour : <strong style="color:#1f2124;">${STATUS_LABEL[quote.status]}</strong>.
+             Your quote request for <strong style="color:#1f2124;">${quote.product.name}</strong>
+             has been updated: <strong style="color:#1f2124;">${STATUS_LABEL[quote.status]}</strong>.
            </p>
            ${
              quote.quotedPrice
                ? `<div style="background:#f5f5f5;border-radius:12px;padding:16px 20px;margin-bottom:16px;">
-                   <div style="font-size:13px;color:#6b6b6b;">Prix proposé</div>
+                   <div style="font-size:13px;color:#6b6b6b;">Proposed price</div>
                    <div style="font-weight:800;color:#1f2124;font-size:20px;">${Number(quote.quotedPrice).toFixed(2)} FCFA</div>
                    ${quote.quotedMessage ? `<div style="margin-top:8px;color:#6b6b6b;font-size:13px;">${quote.quotedMessage}</div>` : ''}
                  </div>`
                : ''
            }
            <div style="text-align:center;margin:8px 0;">
-             ${this.mail.button('Voir ma demande', this.mail.appUrl('/account/quotes'), 'primary')}
+             ${this.mail.button('View my request', this.mail.appUrl('/account/quotes'), 'primary')}
            </div>`,
         )
         .catch(() => undefined);
@@ -145,8 +145,8 @@ export class QuotesService {
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  PENDING: 'en attente',
-  QUOTED: 'devis proposé',
-  ACCEPTED: 'accepté',
-  DECLINED: 'refusé',
+  PENDING: 'pending',
+  QUOTED: 'quote provided',
+  ACCEPTED: 'accepted',
+  DECLINED: 'declined',
 };

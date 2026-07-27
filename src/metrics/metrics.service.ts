@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
-// Compteurs d'observabilité en mémoire (process courant). Léger, sans
-// dépendance externe : suffisant pour une page de suivi interne.
+// In-memory observability counters (current process). Lightweight, no
+// external dependency: sufficient for an internal tracking page.
 @Injectable()
 export class MetricsService {
   private readonly startedAt = Date.now();

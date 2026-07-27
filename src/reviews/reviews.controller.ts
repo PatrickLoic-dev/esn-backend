@@ -17,8 +17,8 @@ export class ReviewsController {
     return this.reviewsService.findByProduct(productId);
   }
 
-  // Authentifié : crée l'avis de l'utilisateur, ou met à jour le précédent
-  // s'il en a déjà laissé un pour ce produit (un avis par utilisateur/produit).
+  // Authenticated: creates the user's review, or updates the previous one if
+  // they already left one for this product (one review per user/product).
   @ApiBearerAuth()
   @Post()
   upsert(

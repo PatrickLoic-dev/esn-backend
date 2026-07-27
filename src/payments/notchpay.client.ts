@@ -16,8 +16,8 @@ export interface NotchPayInitResponse {
 @Injectable()
 export class NotchPayClient {
   private readonly baseUrl = 'https://api.notchpay.co';
-  // Optionnels : si absents, l'initiation d'un paiement renvoie un 503 clair
-  // au lieu de faire planter le démarrage de toute l'API.
+  // Optional: if missing, initiating a payment returns a clear 503 instead
+  // of crashing the whole API's startup.
   private readonly publicKey: string | undefined;
   private readonly callbackUrl: string | undefined;
 
@@ -36,7 +36,7 @@ export class NotchPayClient {
   }): Promise<NotchPayInitResponse> {
     if (!this.publicKey || !this.callbackUrl) {
       throw new ServiceUnavailableException(
-        "Les paiements Notch Pay ne sont pas configurés sur ce serveur.",
+        'Notch Pay payments are not configured on this server.',
       );
     }
     const res = await fetch(`${this.baseUrl}/payments/initialize`, {

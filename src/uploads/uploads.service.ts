@@ -12,8 +12,8 @@ import { extname } from 'path';
 @Injectable()
 export class UploadsService {
   private readonly logger = new Logger(UploadsService.name);
-  // null si les identifiants S3 ne sont pas configurés : l'upload renvoie 503
-  // au lieu de faire planter le boot de l'API.
+  // null if S3 credentials aren't configured: upload returns 503 instead of
+  // crashing the API's boot.
   private readonly s3: S3Client | null;
   private readonly bucket: string;
   private readonly publicBase: string;
@@ -24,7 +24,7 @@ export class UploadsService {
     const secretAccessKey = config.get<string>('S3_SECRET_ACCESS_KEY');
     const region = config.get<string>('S3_REGION') ?? 'us-east-1';
     this.bucket = config.get<string>('S3_BUCKET') ?? 'Images';
-    // Base publique pour construire l'URL renvoyée. Pour Supabase Storage :
+    // Public base used to build the returned URL. For Supabase Storage:
     // https://<ref>.supabase.co/storage/v1/object/public
     this.publicBase = (config.get<string>('S3_PUBLIC_URL') ?? '').replace(
       /\/$/,
@@ -33,8 +33,8 @@ export class UploadsService {
 
     if (!endpoint || !accessKeyId || !secretAccessKey) {
       this.logger.warn(
-        'S3_ENDPOINT/S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY absents : ' +
-          "upload d'images désactivé.",
+        'S3_ENDPOINT/S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY missing: ' +
+          'image upload disabled.',
       );
       this.s3 = null;
       return;
@@ -44,7 +44,7 @@ export class UploadsService {
       endpoint,
       region,
       credentials: { accessKeyId, secretAccessKey },
-      // requis pour les endpoints S3-compatibles (Supabase, MinIO…)
+      // required for S3-compatible endpoints (Supabase, MinIO…)
       forcePathStyle: true,
     });
   }
@@ -55,7 +55,7 @@ export class UploadsService {
   ): Promise<{ url: string }> {
     if (!this.s3) {
       throw new ServiceUnavailableException(
-        "L'upload d'images n'est pas configuré sur ce serveur.",
+        'Image upload is not configured on this server.',
       );
     }
     const ext = (extname(file.originalname) || '.jpg').toLowerCase();

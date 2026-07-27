@@ -2,12 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
 
-// Charte Easy Shop Network. Palette réservée aux CTA ; le reste de l'email
-// reste neutre (encre / gris / blanc) comme la maquette de référence.
+// Easy Shop Network brand guide. Palette reserved for CTAs; the rest of the
+// email stays neutral (ink / gray / white) like the reference mockup.
 const BRAND = {
   name: 'Easy Shop Network',
-  primary: '#1f9d55', // action principale
-  primaryDark: '#14703c', // action secondaire
+  primary: '#1f9d55', // primary action
+  primaryDark: '#14703c', // secondary action
   ink: '#1f2124',
   sub: '#6b6b6b',
   line: '#e6e6e6',
@@ -15,8 +15,8 @@ const BRAND = {
   bg: '#ffffff',
 };
 
-// Titres en Sora, corps en Inter (mêmes polices que le site, chargées via
-// Google Fonts ; repli sans-serif si le client mail bloque les polices).
+// Headings in Sora, body in Inter (same fonts as the site, loaded via
+// Google Fonts; falls back to sans-serif if the mail client blocks fonts).
 const HEADING_FONT = "'Sora','Segoe UI',Helvetica,Arial,sans-serif";
 const BODY_FONT = "'Inter','Segoe UI',Helvetica,Arial,sans-serif";
 
@@ -37,7 +37,7 @@ export class MailService {
     ).replace(/\/$/, '');
     if (!apiKey || !this.from) {
       this.logger.warn(
-        "RESEND_API_KEY/MAIL_FROM absents : envoi d'emails désactivé.",
+        'RESEND_API_KEY/MAIL_FROM missing: email sending disabled.',
       );
       this.resend = null;
     } else {
@@ -47,7 +47,7 @@ export class MailService {
 
   async send(to: string, subject: string, bodyHtml: string) {
     if (!this.resend) {
-      this.logger.warn(`Email non envoyé (Resend désactivé) : "${subject}"`);
+      this.logger.warn(`Email not sent (Resend disabled): "${subject}"`);
       return;
     }
     const { error } = await this.resend.emails.send({
@@ -61,20 +61,20 @@ export class MailService {
     }
   }
 
-  // URL absolue vers une page du storefront (pour les CTA)
+  // Absolute URL to a storefront page (for CTAs)
   appUrl(path = ''): string {
     return `${this.frontendUrl}${path.startsWith('/') ? path : `/${path}`}`;
   }
 
-  // Titre de section en Sora (couleur encre, pas de palette)
+  // Section heading in Sora (ink color, no brand palette)
   heading(text: string, size = 22): string {
     return `<h1 style="margin:0;font-family:${HEADING_FONT};font-weight:800;
       font-size:${size}px;line-height:1.2;color:${BRAND.ink};
       letter-spacing:-0.3px;">${text}</h1>`;
   }
 
-  // CTA — seuls éléments à porter la palette de marque.
-  // variant "primary" = action principale, "secondary" = action secondaire.
+  // CTA — the only elements carrying the brand palette.
+  // variant "primary" = primary action, "secondary" = secondary action.
   button(label: string, href: string, variant: 'primary' | 'secondary' = 'primary'): string {
     const styles =
       variant === 'primary'
@@ -86,8 +86,8 @@ export class MailService {
   }
 
   private header(): string {
-    // Logo hébergé : MAIL_LOGO_URL en priorité, sinon le PNG servi par le
-    // frontend (public/logo.png). Repli wordmark si aucune URL n'est dispo.
+    // Hosted logo: MAIL_LOGO_URL takes priority, otherwise the PNG served by
+    // the frontend (public/logo.png). Falls back to a wordmark if no URL is available.
     const src = this.logoUrl ?? (this.frontendUrl ? `${this.frontendUrl}/logo.png` : '');
     const logo = src
       ? `<img src="${src}" alt="${BRAND.name}" height="52"
@@ -99,8 +99,8 @@ export class MailService {
   }
 
   private footer(): string {
-    // Icônes monochromes hébergées par le frontend (rendues partout, contrairement
-    // au SVG inline que Gmail supprime).
+    // Monochrome icons hosted by the frontend (render everywhere, unlike
+    // inline SVG which Gmail strips out).
     const feature = (icon: string, label: string) =>
       `<td align="center" style="padding:14px 6px;font-family:${BODY_FONT};font-size:11px;
         color:${BRAND.sub};text-transform:uppercase;letter-spacing:0.5px;">
@@ -121,19 +121,19 @@ export class MailService {
         </tr>
       </table>
       <div style="text-align:center;padding:20px 24px 8px;">
-        ${nav('Boutique', '/shop')}
-        ${nav('Mon compte', '/account')}
+        ${nav('Shop', '/shop')}
+        ${nav('My account', '/account')}
         ${nav('Support', '/account/support')}
       </div>
       <div style="text-align:center;padding:4px 24px 28px;font-family:${BODY_FONT};
         font-size:11px;color:${BRAND.sub};">
-        © ${new Date().getFullYear()} ${BRAND.name}. Tous droits réservés.
+        © ${new Date().getFullYear()} ${BRAND.name}. All rights reserved.
       </div>`;
   }
 
   private layout(title: string, bodyHtml: string): string {
     return `<!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />

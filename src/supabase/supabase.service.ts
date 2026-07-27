@@ -5,8 +5,8 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 @Injectable()
 export class SupabaseService {
   private readonly logger = new Logger(SupabaseService.name);
-  // Peut être null si Supabase n'est pas configuré (ex. AUTH_MODE=local ou
-  // URL absente/invalide). On NE fait pas planter le boot pour autant.
+  // Can be null if Supabase isn't configured (e.g. AUTH_MODE=local or
+  // URL missing/invalid). This does NOT crash the boot.
   readonly client: SupabaseClient | null;
 
   constructor(config: ConfigService) {
@@ -15,8 +15,8 @@ export class SupabaseService {
 
     if (!url || !anonKey) {
       this.logger.warn(
-        'SUPABASE_URL/SUPABASE_ANON_KEY absents : client Supabase désactivé ' +
-          "(normal en mode d'authentification locale).",
+        'SUPABASE_URL/SUPABASE_ANON_KEY missing: Supabase client disabled ' +
+          '(expected in local auth mode).',
       );
       this.client = null;
       return;
@@ -27,10 +27,10 @@ export class SupabaseService {
         auth: { persistSession: false, autoRefreshToken: false },
       });
     } catch (err) {
-      // Une URL mal formée ne doit pas empêcher toute l'API de démarrer :
-      // seules les routes d'auth Supabase seront indisponibles.
+      // A malformed URL must not prevent the whole API from starting:
+      // only the Supabase auth routes will be unavailable.
       this.logger.error(
-        `Initialisation du client Supabase impossible, il est désactivé : ${
+        `Unable to initialize the Supabase client, it is disabled: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );

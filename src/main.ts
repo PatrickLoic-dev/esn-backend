@@ -12,12 +12,12 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
 
-  // Sécurité : en-têtes durcis (Helmet) + compression gzip des réponses.
-  // CSP désactivée : API JSON + Swagger UI (scripts inline) — les autres
-  // protections Helmet (nosniff, frameguard, HSTS, etc.) restent actives.
+  // Security: hardened headers (Helmet) + gzip response compression.
+  // CSP disabled: JSON API + Swagger UI (inline scripts) — the other Helmet
+  // protections (nosniff, frameguard, HSTS, etc.) remain active.
   app.use(helmet({ contentSecurityPolicy: false }));
   app.use(compression());
-  // Limite la taille des payloads JSON (anti-DoS par gros corps de requête).
+  // Limits JSON payload size (anti-DoS via large request bodies).
   const express = app.getHttpAdapter().getInstance() as {
     use: (m: unknown) => void;
   };
@@ -34,8 +34,8 @@ async function bootstrap() {
       exceptionFactory: validationExceptionFactory,
     }),
   );
-  // CORS : allowlist via CORS_ORIGINS (séparés par des virgules). À défaut,
-  // on autorise toutes les origines (rétrocompatible) mais on log un avertissement.
+  // CORS: allowlist via CORS_ORIGINS (comma-separated). Otherwise, all
+  // origins are allowed (backward-compatible) but a warning is logged.
   const origins = (process.env.CORS_ORIGINS ?? '')
     .split(',')
     .map((o) => o.trim())
@@ -56,12 +56,12 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, document);
 
-  // Arrêt gracieux : déclenche les hooks onModuleDestroy (fermeture propre du
-  // pool Prisma) quand le conteneur reçoit SIGTERM/SIGINT.
+  // Graceful shutdown: triggers the onModuleDestroy hooks (clean closing of
+  // the Prisma pool) when the container receives SIGTERM/SIGINT.
   app.enableShutdownHooks();
 
-  // 0.0.0.0 est indispensable en conteneur : sinon le serveur n'écoute que sur
-  // la boucle locale et n'est pas joignable depuis l'extérieur du conteneur.
+  // 0.0.0.0 is required in a container: otherwise the server only listens on
+  // the loopback interface and isn't reachable from outside the container.
   await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
 }
 void bootstrap();
