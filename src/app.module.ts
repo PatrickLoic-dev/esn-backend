@@ -10,6 +10,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { CategoriesModule } from './categories/categories.module';
 import { ProductsModule } from './products/products.module';
+import { ReviewsModule } from './reviews/reviews.module';
 import { OrdersModule } from './orders/orders.module';
 import { QuotesModule } from './quotes/quotes.module';
 import { PaymentsModule } from './payments/payments.module';
@@ -47,6 +48,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     UsersModule,
     CategoriesModule,
     ProductsModule,
+    ReviewsModule,
     OrdersModule,
     QuotesModule,
     PaymentsModule,
