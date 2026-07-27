@@ -9,7 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 
 type Probe = { up: boolean; error?: string };
 
-// Services suivis sur la page de statut.
+// Services tracked on the status page.
 const SERVICES = [
   'api',
   'database',
@@ -21,10 +21,10 @@ type ServiceId = (typeof SERVICES)[number];
 
 const LABELS: Record<ServiceId, string> = {
   api: 'API',
-  database: 'Base de données',
+  database: 'Database',
   mail: 'Emails (Resend)',
-  storage: 'Stockage (S3)',
-  payments: 'Paiements (Notch Pay)',
+  storage: 'Storage (S3)',
+  payments: 'Payments (Notch Pay)',
 };
 
 const PROBE_INTERVAL_MS = 5 * 60_000; // 5 min
@@ -38,7 +38,7 @@ function today(): string {
 export class StatusService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(StatusService.name);
   private timer?: NodeJS.Timeout;
-  // Dernier état connu par service (pour l'affichage instantané).
+  // Last known state per service (for instant display).
   private readonly current = new Map<ServiceId, Probe>();
 
   constructor(
@@ -49,7 +49,7 @@ export class StatusService implements OnModuleInit, OnModuleDestroy {
   onModuleInit() {
     void this.probeAll();
     this.timer = setInterval(() => void this.probeAll(), PROBE_INTERVAL_MS);
-    // Ne bloque pas l'arrêt du process.
+    // Doesn't block process shutdown.
     this.timer.unref?.();
   }
 
@@ -72,7 +72,7 @@ export class StatusService implements OnModuleInit, OnModuleDestroy {
         case 'mail':
           return this.configured('RESEND_API_KEY', 'MAIL_FROM')
             ? { up: true }
-            : { up: false, error: 'RESEND_API_KEY / MAIL_FROM non configurés' };
+            : { up: false, error: 'RESEND_API_KEY / MAIL_FROM not configured' };
         case 'storage':
           return this.configured(
             'S3_ENDPOINT',
@@ -80,18 +80,18 @@ export class StatusService implements OnModuleInit, OnModuleDestroy {
             'S3_SECRET_ACCESS_KEY',
           )
             ? { up: true }
-            : { up: false, error: 'Identifiants S3 non configurés' };
+            : { up: false, error: 'S3 credentials not configured' };
         case 'payments':
           return this.configured('NOTCHPAY_PUBLIC_KEY')
             ? { up: true }
-            : { up: false, error: 'Clé Notch Pay absente' };
+            : { up: false, error: 'Notch Pay key missing' };
       }
     } catch (err) {
       return { up: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
 
-  // Sonde tous les services, met à jour l'agrégat quotidien et les incidents.
+  // Probes every service, updates the daily aggregate and the incidents.
   private async probeAll() {
     const day = today();
     for (const service of SERVICES) {
@@ -109,13 +109,13 @@ export class StatusService implements OnModuleInit, OnModuleDestroy {
         await this.reconcileIncident(service, res);
       } catch (err) {
         this.logger.warn(
-          `Suivi statut ${service} impossible : ${err instanceof Error ? err.message : err}`,
+          `Unable to track status for ${service}: ${err instanceof Error ? err.message : err}`,
         );
       }
     }
   }
 
-  // Ouvre un incident quand un service tombe, le résout quand il revient.
+  // Opens an incident when a service goes down, resolves it when it recovers.
   private async reconcileIncident(service: ServiceId, res: Probe) {
     const open = await this.prisma.serviceIncident.findFirst({
       where: { service, resolvedAt: null },
@@ -123,7 +123,7 @@ export class StatusService implements OnModuleInit, OnModuleDestroy {
     });
     if (!res.up && !open) {
       await this.prisma.serviceIncident.create({
-        data: { service, error: res.error ?? 'Service indisponible' },
+        data: { service, error: res.error ?? 'Service unavailable' },
       });
     } else if (res.up && open) {
       await this.prisma.serviceIncident.update({
@@ -133,7 +133,7 @@ export class StatusService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // Données pour la page de statut : services + heatmap + incidents.
+  // Data for the status page: services + heatmap + incidents.
   async getStatus() {
     const since = new Date(Date.now() - HEATMAP_DAYS * 86_400_000)
       .toISOString()
@@ -149,7 +149,7 @@ export class StatusService implements OnModuleInit, OnModuleDestroy {
       }),
     ]);
 
-    // Regroupe les jours par service.
+    // Groups days by service.
     const byService = new Map<string, Map<string, { up: number; total: number }>>();
     for (const d of days) {
       const m = byService.get(d.service) ?? new Map();
@@ -157,7 +157,7 @@ export class StatusService implements OnModuleInit, OnModuleDestroy {
       byService.set(d.service, m);
     }
 
-    // Grille des 90 derniers jours (jour → ratio ou null si pas de données).
+    // Grid of the last 90 days (day → ratio, or null if no data).
     const range: string[] = [];
     for (let i = HEATMAP_DAYS - 1; i >= 0; i--) {
       range.push(new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10));

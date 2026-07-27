@@ -7,7 +7,7 @@ import {
 import { Observable, tap } from 'rxjs';
 import { MetricsService } from './metrics.service';
 
-// Enregistre durée + statut de chaque requête HTTP dans MetricsService.
+// Records duration + status of every HTTP request in MetricsService.
 @Injectable()
 export class MetricsInterceptor implements NestInterceptor {
   constructor(private metrics: MetricsService) {}

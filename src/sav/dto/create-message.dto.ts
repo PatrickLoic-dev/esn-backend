@@ -7,7 +7,7 @@ export class CreateMessageDto {
   @MinLength(1)
   content?: string;
 
-  // URL d'une image téléversée (capture d'écran) — optionnelle.
+  // URL of an uploaded image (screenshot) — optional.
   @IsOptional()
   @IsString()
   imageUrl?: string;

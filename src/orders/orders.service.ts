@@ -12,11 +12,11 @@ import { JwtPayload } from '../auth/decorators/current-user.decorator';
 import { isStaff } from '../auth/roles.util';
 
 const STATUS_MESSAGE: Record<OrderStatus, string> = {
-  PENDING: 'a bien été reçue et est en attente de paiement',
-  PAID: 'a été payée et est en cours de préparation',
-  SHIPPED: 'a été expédiée et est en route',
-  DELIVERED: 'a été livrée — bonne réception !',
-  CANCELLED: 'a été annulée',
+  PENDING: 'has been received and is awaiting payment',
+  PAID: 'has been paid and is being prepared',
+  SHIPPED: 'has been shipped and is on its way',
+  DELIVERED: 'has been delivered — enjoy!',
+  CANCELLED: 'has been cancelled',
 };
 
 @Injectable()
@@ -27,7 +27,7 @@ export class OrdersService {
   ) {}
 
   async create(userId: string, dto: CreateOrderDto) {
-    // Lignes de récapitulatif (nom/quantité/prix) pour l'email de confirmation
+    // Summary rows (name/quantity/price) for the confirmation email
     const summaryRows: {
       name: string;
       quantity: number;
@@ -99,10 +99,10 @@ export class OrdersService {
       });
     });
 
-    // Email de confirmation de commande (fire-and-forget, ne bloque pas)
+    // Order confirmation email (fire-and-forget, non-blocking)
     const ref = order.id.slice(0, 8).toUpperCase();
     const shippingCost = order.shippingCost ?? new Prisma.Decimal(0);
-    const orderDate = new Date(order.createdAt).toLocaleDateString('fr-FR', {
+    const orderDate = new Date(order.createdAt).toLocaleDateString('en-US', {
       day: 'numeric',
       month: 'long',
       year: 'numeric',
@@ -112,7 +112,7 @@ export class OrdersService {
     const line = '#e6e6e6';
     const panel = '#f5f5f5';
 
-    // Lignes de produits (image, nom, qté, prix) — style neutre
+    // Product rows (image, name, qty, price) — neutral style
     const rowsHtml = summaryRows
       .map((r) => {
         const img = r.imageUrl
@@ -125,7 +125,7 @@ export class OrdersService {
           <td style="padding:14px 0;width:56px;vertical-align:top;">${img}</td>
           <td style="padding:14px 12px;vertical-align:top;">
             <div style="font-weight:700;color:${ink};font-size:14px;">${r.name}</div>
-            <div style="color:${sub};font-size:12px;margin-top:4px;">Qté : ${r.quantity}</div>
+            <div style="color:${sub};font-size:12px;margin-top:4px;">Qty: ${r.quantity}</div>
           </td>
           <td style="padding:14px 0;vertical-align:top;text-align:right;
             white-space:nowrap;font-weight:700;color:${ink};font-size:14px;">
@@ -136,7 +136,7 @@ export class OrdersService {
       })
       .join('');
 
-    // Adresse de livraison capturée au checkout
+    // Shipping address captured at checkout
     const a = (dto.shippingAddress ?? {}) as Record<string, string | undefined>;
     const addressHtml = [
       a.fullName,
@@ -166,32 +166,32 @@ export class OrdersService {
     void this.mail
       .send(
         order.user.email,
-        `Confirmation de votre commande ${ref}`,
+        `Your order confirmation ${ref}`,
         `<div style="text-align:center;">
-           ${this.mail.heading('Commande confirmée', 26)}
+           ${this.mail.heading('Order confirmed', 26)}
            <p style="margin:8px 0 0;color:${sub};font-size:13px;letter-spacing:0.5px;">
-             COMMANDE #${ref} · ${orderDate}
+             ORDER #${ref} · ${orderDate}
            </p>
          </div>
          <p style="margin:24px 0 4px;color:${ink};">
-           Bonjour ${order.user.firstName ?? ''}, merci pour votre achat !
+           Hello ${order.user.firstName ?? ''}, thank you for your purchase!
          </p>
          <p style="margin:0 0 20px;color:${sub};">
-           Nous préparons votre commande. Vous serez notifié dès son expédition.
+           We're preparing your order. You'll be notified as soon as it ships.
          </p>
          <div style="text-align:center;margin:8px 0 28px;">
-           ${this.mail.button('Suivre ma commande', this.mail.appUrl('/account/orders'), 'primary')}
+           ${this.mail.button('Track my order', this.mail.appUrl('/account/orders'), 'primary')}
            &nbsp;
-           ${this.mail.button('Continuer mes achats', this.mail.appUrl('/shop'), 'secondary')}
+           ${this.mail.button('Continue shopping', this.mail.appUrl('/shop'), 'secondary')}
          </div>
 
          <div style="background:${panel};border-radius:12px;padding:20px 22px;">
-           ${this.mail.heading('Détail de la commande', 16)}
+           ${this.mail.heading('Order details', 16)}
            <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
              style="border-collapse:collapse;margin-top:8px;">
              ${rowsHtml}
-             ${totalRow('Sous-total', `${itemsSubtotal.toFixed(2)} FCFA`)}
-             ${totalRow('Livraison', `${shippingCost.toFixed(2)} FCFA`)}
+             ${totalRow('Subtotal', `${itemsSubtotal.toFixed(2)} FCFA`)}
+             ${totalRow('Shipping', `${shippingCost.toFixed(2)} FCFA`)}
              ${totalRow('Total', `${order.total.toFixed(2)} FCFA`, true)}
            </table>
          </div>
@@ -199,7 +199,7 @@ export class OrdersService {
          ${
            addressHtml
              ? `<div style="margin-top:28px;">
-                 ${this.mail.heading('Adresse de livraison', 16)}
+                 ${this.mail.heading('Shipping address', 16)}
                  <div style="margin-top:8px;">${addressHtml}</div>
                </div>`
              : ''
@@ -261,20 +261,20 @@ export class OrdersService {
       data: { status },
       include: { user: { select: { email: true, firstName: true } } },
     });
-    // Notifie automatiquement le client du nouveau statut (si changement réel)
+    // Automatically notifies the customer of the new status (if it actually changed)
     if (status !== order.status) {
       const ref = updated.id.slice(0, 8).toUpperCase();
       void this.mail
         .send(
           updated.user.email,
-          `Mise à jour de votre commande ${ref}`,
-          `${this.mail.heading('Mise à jour de votre commande', 22)}
-           <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${updated.user.firstName ?? ''},</p>
+          `Update on your order ${ref}`,
+          `${this.mail.heading('Update on your order', 22)}
+           <p style="margin:20px 0 4px;color:#1f2124;">Hello ${updated.user.firstName ?? ''},</p>
            <p style="margin:0 0 20px;color:#6b6b6b;">
-             Votre commande <strong style="color:#1f2124;">#${ref}</strong> ${STATUS_MESSAGE[status]}.
+             Your order <strong style="color:#1f2124;">#${ref}</strong> ${STATUS_MESSAGE[status]}.
            </p>
            <div style="text-align:center;margin:8px 0;">
-             ${this.mail.button('Suivre ma commande', this.mail.appUrl('/account/orders'), 'primary')}
+             ${this.mail.button('Track my order', this.mail.appUrl('/account/orders'), 'primary')}
            </div>`,
         )
         .catch(() => undefined);
@@ -294,14 +294,14 @@ export class OrdersService {
     const ref = order.id.slice(0, 8).toUpperCase();
     await this.mail.send(
       order.user.email,
-      `Mise à jour de votre commande ${ref}`,
-      `${this.mail.heading('Mise à jour de votre commande', 22)}
-       <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${order.user.firstName ?? ''},</p>
+      `Update on your order ${ref}`,
+      `${this.mail.heading('Update on your order', 22)}
+       <p style="margin:20px 0 4px;color:#1f2124;">Hello ${order.user.firstName ?? ''},</p>
        <p style="margin:0 0 20px;color:#6b6b6b;">
-         Votre commande <strong style="color:#1f2124;">#${ref}</strong> ${STATUS_MESSAGE[order.status]}.
+         Your order <strong style="color:#1f2124;">#${ref}</strong> ${STATUS_MESSAGE[order.status]}.
        </p>
        <div style="text-align:center;margin:8px 0;">
-         ${this.mail.button('Suivre ma commande', this.mail.appUrl('/account/orders'), 'primary')}
+         ${this.mail.button('Track my order', this.mail.appUrl('/account/orders'), 'primary')}
        </div>`,
     );
     return { sent: true };

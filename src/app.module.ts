@@ -26,7 +26,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    // Rate-limiting global : 100 requêtes / 60 s par IP (anti-abus/brute-force).
+    // Global rate-limiting: 100 requests / 60s per IP (anti-abuse/brute-force).
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     LoggerModule.forRootAsync({
       inject: [ConfigService],
@@ -59,12 +59,12 @@ import { RolesGuard } from './auth/guards/roles.guard';
     HealthModule,
   ],
   providers: [
-    // Rate-limiting appliqué en premier.
+    // Rate-limiting applied first.
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     // All routes require a valid Supabase JWT unless marked @Public()
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
-    // Observabilité : compte chaque requête HTTP.
+    // Observability: counts every HTTP request.
     { provide: APP_INTERCEPTOR, useClass: MetricsInterceptor },
   ],
 })

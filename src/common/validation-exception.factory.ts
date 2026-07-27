@@ -1,71 +1,71 @@
 import { BadRequestException, ValidationError } from '@nestjs/common';
 
-// Libellés lisibles par champ (repli : le nom du champ tel quel).
+// Human-readable labels per field (fallback: the field name as-is).
 const FIELD_LABELS: Record<string, string> = {
-  email: "L'adresse email",
-  password: 'Le mot de passe',
-  currentPassword: 'Le mot de passe actuel',
-  newPassword: 'Le nouveau mot de passe',
-  firstName: 'Le prénom',
-  lastName: 'Le nom',
-  fullName: 'Le nom complet',
-  phone: 'Le numéro de téléphone',
-  address: "L'adresse",
-  city: 'La ville',
-  postalCode: 'Le code postal',
-  country: 'Le pays',
-  avatarUrl: "L'image de profil",
-  subject: 'Le sujet',
-  message: 'Le message',
-  content: 'Le message',
-  name: 'Le nom',
-  price: 'Le prix',
-  stock: 'Le stock',
-  quantity: 'La quantité',
-  token: 'Le lien',
-  role: 'Le rôle',
-  status: 'Le statut',
-  priority: 'La priorité',
+  email: 'The email address',
+  password: 'The password',
+  currentPassword: 'The current password',
+  newPassword: 'The new password',
+  firstName: 'The first name',
+  lastName: 'The last name',
+  fullName: 'The full name',
+  phone: 'The phone number',
+  address: 'The address',
+  city: 'The city',
+  postalCode: 'The postal code',
+  country: 'The country',
+  avatarUrl: 'The profile picture',
+  subject: 'The subject',
+  message: 'The message',
+  content: 'The message',
+  name: 'The name',
+  price: 'The price',
+  stock: 'The stock',
+  quantity: 'The quantity',
+  token: 'The link',
+  role: 'The role',
+  status: 'The status',
+  priority: 'The priority',
 };
 
 function label(prop: string): string {
-  return FIELD_LABELS[prop] ?? `Le champ « ${prop} »`;
+  return FIELD_LABELS[prop] ?? `The field "${prop}"`;
 }
 
-// Traduit une contrainte class-validator en message français cohérent.
+// Translates a class-validator constraint into a consistent English message.
 function messageFor(prop: string, constraint: string): string {
   const l = label(prop);
-  if (constraint.startsWith('isEmail')) return `${l} n'est pas valide.`;
-  if (constraint.startsWith('isUrl')) return `${l} doit être une URL valide.`;
+  if (constraint.startsWith('isEmail')) return `${l} is not valid.`;
+  if (constraint.startsWith('isUrl')) return `${l} must be a valid URL.`;
   if (constraint.startsWith('minLength')) {
     const n = /(\d+)/.exec(constraint)?.[1];
     return n
-      ? `${l} doit contenir au moins ${n} caractères.`
-      : `${l} est trop court.`;
+      ? `${l} must contain at least ${n} characters.`
+      : `${l} is too short.`;
   }
-  if (constraint.startsWith('maxLength')) return `${l} est trop long.`;
+  if (constraint.startsWith('maxLength')) return `${l} is too long.`;
   if (
     constraint.startsWith('isNotEmpty') ||
     constraint.startsWith('isDefined') ||
     constraint.startsWith('isString')
   )
-    return `${l} est requis.`;
+    return `${l} is required.`;
   if (
     constraint.startsWith('isNumber') ||
     constraint.startsWith('isInt') ||
     constraint.startsWith('min') ||
     constraint.startsWith('max')
   )
-    return `${l} doit être un nombre valide.`;
+    return `${l} must be a valid number.`;
   if (constraint.startsWith('isEnum') || constraint.startsWith('isIn'))
-    return `${l} n'est pas une valeur autorisée.`;
-  if (constraint.startsWith('isBoolean')) return `${l} est invalide.`;
+    return `${l} is not an allowed value.`;
+  if (constraint.startsWith('isBoolean')) return `${l} is invalid.`;
   if (constraint.startsWith('whitelistValidation'))
-    return `Le champ « ${prop} » n'est pas autorisé.`;
-  return `${l} est invalide.`;
+    return `The field "${prop}" is not allowed.`;
+  return `${l} is invalid.`;
 }
 
-// Aplati les erreurs (y compris imbriquées) en messages lisibles.
+// Flattens errors (including nested ones) into readable messages.
 function flatten(errors: ValidationError[], parent = ''): string[] {
   const out: string[] = [];
   for (const err of errors) {
@@ -82,12 +82,12 @@ function flatten(errors: ValidationError[], parent = ''): string[] {
   return out;
 }
 
-// Fabrique d'exception branchée sur le ValidationPipe global.
+// Exception factory wired into the global ValidationPipe.
 export function validationExceptionFactory(errors: ValidationError[]) {
   const messages = flatten(errors);
   return new BadRequestException({
     statusCode: 400,
     error: 'Bad Request',
-    message: messages.length ? messages : ['Requête invalide.'],
+    message: messages.length ? messages : ['Invalid request.'],
   });
 }

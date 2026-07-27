@@ -31,8 +31,8 @@ export class ReviewsService {
     };
   }
 
-  // Un avis par utilisateur et par produit (@@unique) : une seconde
-  // soumission met simplement à jour l'avis existant plutôt que d'échouer.
+  // One review per user and per product (@@unique): a second submission
+  // simply updates the existing review instead of failing.
   async upsert(productId: string, user: JwtPayload, dto: CreateReviewDto) {
     const product = await this.prisma.product.findUnique({
       where: { id: productId },

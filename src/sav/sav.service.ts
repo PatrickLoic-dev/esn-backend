@@ -56,16 +56,16 @@ export class SavService {
 
     void this.mail.send(
       user.email,
-      `Ticket reçu : ${ticket.subject}`,
-      `${this.mail.heading('Nous avons bien reçu votre demande', 22)}
-       <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${user.email.split('@')[0]},</p>
+      `Ticket received: ${ticket.subject}`,
+      `${this.mail.heading('We have received your request', 22)}
+       <p style="margin:20px 0 4px;color:#1f2124;">Hello ${user.email.split('@')[0]},</p>
        <p style="margin:0 0 20px;color:#6b6b6b;">
-         Votre ticket <strong style="color:#1f2124;">${ticket.subject}</strong>
-         (n° TKT-${String(ticket.number).padStart(3, '0')}) a bien été enregistré.
-         Notre équipe vous répondra dans les meilleurs délais.
+         Your ticket <strong style="color:#1f2124;">${ticket.subject}</strong>
+         (no. TKT-${String(ticket.number).padStart(3, '0')}) has been recorded.
+         Our team will respond as soon as possible.
        </p>
        <div style="text-align:center;margin:8px 0;">
-         ${this.mail.button('Voir mon ticket', this.mail.appUrl(`/account/support/${ticket.id}`), 'primary')}
+         ${this.mail.button('View my ticket', this.mail.appUrl(`/account/support/${ticket.id}`), 'primary')}
        </div>`,
     );
 
@@ -84,8 +84,8 @@ export class SavService {
     });
   }
 
-  // Espace client : toujours limité aux tickets de l'utilisateur courant,
-  // même pour un compte staff (qui voit l'ensemble via le panneau admin).
+  // Customer area: always limited to the current user's tickets, even for a
+  // staff account (which sees everything via the admin panel).
   findOwn(user: JwtPayload) {
     return this.prisma.ticket.findMany({
       where: { userId: user.sub },
@@ -133,10 +133,10 @@ export class SavService {
     }
     this.assertCanAccess(ticket.userId, user);
 
-    // Un ticket clôturé n'accepte plus de nouveaux messages (chat verrouillé).
+    // A closed ticket no longer accepts new messages (chat locked).
     if (ticket.status === TicketStatus.CLOSED) {
       throw new BadRequestException(
-        'Ce ticket est clôturé — vous ne pouvez plus y envoyer de messages.',
+        'This ticket is closed — you can no longer send messages to it.',
       );
     }
 
@@ -163,7 +163,7 @@ export class SavService {
       this.gateway.emitStatus(ticketId, nextStatus);
     }
 
-    // Réponse du staff → notifie le client par email
+    // Staff reply → notify the customer by email
     if (isStaff(user.role)) {
       const owner = await this.prisma.user.findUnique({
         where: { id: ticket.userId },
@@ -173,19 +173,19 @@ export class SavService {
         void this.mail
           .send(
             owner.email,
-            `Réponse à votre ticket : ${ticket.subject}`,
-            `${this.mail.heading('Nouvelle réponse à votre ticket', 22)}
-             <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${owner.firstName ?? ''},</p>
+            `Reply to your ticket: ${ticket.subject}`,
+            `${this.mail.heading('New reply to your ticket', 22)}
+             <p style="margin:20px 0 4px;color:#1f2124;">Hello ${owner.firstName ?? ''},</p>
              <p style="margin:0 0 12px;color:#6b6b6b;">
-               Notre équipe a répondu à votre ticket
-               <strong style="color:#1f2124;">${ticket.subject}</strong> :
+               Our team replied to your ticket
+               <strong style="color:#1f2124;">${ticket.subject}</strong>:
              </p>
              <blockquote style="margin:0 0 20px;padding:12px 16px;border-left:3px solid #e6e6e6;
                background:#f5f5f5;border-radius:6px;color:#1f2124;">
-               ${content || '📎 Pièce jointe (image)'}
+               ${content || '📎 Attachment (image)'}
              </blockquote>
              <div style="text-align:center;margin:8px 0;">
-               ${this.mail.button('Répondre', this.mail.appUrl(`/account/support/${ticket.id}`), 'primary')}
+               ${this.mail.button('Reply', this.mail.appUrl(`/account/support/${ticket.id}`), 'primary')}
              </div>`,
           )
           .catch(() => undefined);

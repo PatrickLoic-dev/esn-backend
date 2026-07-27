@@ -39,7 +39,7 @@ export class AuthService {
     // JwtStrategy verifies), so the full auth flow works without Supabase.
     this.localMode = config.get<string>('AUTH_MODE') === 'local';
     this.jwtSecret = config.getOrThrow<string>('SUPABASE_JWT_SECRET');
-    // Base publique du frontend, pour bâtir le lien de réinitialisation
+    // Public frontend base URL, used to build the reset-password link.
     this.frontendUrl = (
       config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000'
     ).replace(/\/$/, '');
@@ -51,7 +51,7 @@ export class AuthService {
         where: { email: dto.email },
       });
       if (existing) {
-        throw new BadRequestException('Cette adresse email est déjà utilisée.');
+        throw new BadRequestException('This email address is already in use.');
       }
       const user = await this.prisma.user.create({
         data: {
@@ -62,7 +62,7 @@ export class AuthService {
         },
       });
       void this.mail
-        .send(dto.email, 'Bienvenue chez Easy Shop Network', this.welcomeBody(dto.firstName))
+        .send(dto.email, 'Welcome to Easy Shop Network', this.welcomeBody(dto.firstName))
         .catch(() => undefined);
       return { userId: user.id, ...this.issueTokens(user.id, user.email) };
     }
@@ -91,7 +91,7 @@ export class AuthService {
 
     void this.mail.send(
       dto.email,
-      'Bienvenue chez Easy Shop Network',
+      'Welcome to Easy Shop Network',
       this.welcomeBody(dto.firstName),
     );
 
@@ -111,33 +111,32 @@ export class AuthService {
         !user?.passwordHash ||
         !(await bcrypt.compare(dto.password, user.passwordHash))
       ) {
-        throw new UnauthorizedException('Email ou mot de passe incorrect.');
+        throw new UnauthorizedException('Incorrect email or password.');
       }
       if (!user.isActive) {
-        throw new UnauthorizedException('Ce compte a été désactivé.');
+        throw new UnauthorizedException('This account has been deactivated.');
       }
       await this.prisma.user.update({
         where: { id: user.id },
         data: { lastLoginAt: new Date() },
       });
-      // Notification de sécurité : email à chaque connexion
-      const when = new Date().toLocaleString('fr-FR');
+      // Security notification: email sent on every sign-in
+      const when = new Date().toLocaleString('en-US');
       void this.mail
         .send(
           user.email,
-          'Nouvelle connexion à votre compte',
-          `${this.mail.heading('Nouvelle connexion', 22)}
-           <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${user.firstName ?? ''},</p>
+          'New sign-in to your account',
+          `${this.mail.heading('New sign-in', 22)}
+           <p style="margin:20px 0 4px;color:#1f2124;">Hello ${user.firstName ?? ''},</p>
            <p style="margin:0 0 8px;color:#6b6b6b;">
-             Une connexion à votre compte Easy Shop Network vient d'avoir lieu le
+             A sign-in to your Easy Shop Network account just occurred on
              <strong style="color:#1f2124;">${when}</strong>.
            </p>
            <p style="margin:0 0 20px;color:#6b6b6b;">
-             Si vous n'êtes pas à l'origine de cette connexion, réinitialisez votre
-             mot de passe immédiatement.
+             If this wasn't you, reset your password immediately.
            </p>
            <div style="text-align:center;margin:8px 0;">
-             ${this.mail.button('Sécuriser mon compte', this.mail.appUrl('/auth/forgot-password'), 'primary')}
+             ${this.mail.button('Secure my account', this.mail.appUrl('/auth/forgot-password'), 'primary')}
            </div>`,
         )
         .catch(() => undefined);
@@ -150,7 +149,7 @@ export class AuthService {
         password: dto.password,
       });
     if (error || !data.session) {
-      throw new UnauthorizedException('Email ou mot de passe incorrect.');
+      throw new UnauthorizedException('Incorrect email or password.');
     }
     return this.toTokens(data.session);
   }
@@ -163,7 +162,7 @@ export class AuthService {
         }) as { sub: string; email: string };
         return this.issueTokens(payload.sub, payload.email);
       } catch {
-        throw new UnauthorizedException('Votre session a expiré, veuillez vous reconnecter.');
+        throw new UnauthorizedException('Your session has expired, please sign in again.');
       }
     }
 
@@ -171,7 +170,7 @@ export class AuthService {
       refresh_token: dto.refreshToken,
     });
     if (error || !data.session) {
-      throw new UnauthorizedException('Votre session a expiré, veuillez vous reconnecter.');
+      throw new UnauthorizedException('Your session has expired, please sign in again.');
     }
     return this.toTokens(data.session);
   }
@@ -187,7 +186,7 @@ export class AuthService {
       !user?.passwordHash ||
       !(await bcrypt.compare(dto.currentPassword, user.passwordHash))
     ) {
-      throw new UnauthorizedException('Le mot de passe actuel est incorrect.');
+      throw new UnauthorizedException('The current password is incorrect.');
     }
     await this.prisma.user.update({
       where: { id: userId },
@@ -196,8 +195,8 @@ export class AuthService {
     return { success: true };
   }
 
-  // Mot de passe oublié : envoie un lien de réinitialisation par email.
-  // Réponse identique que le compte existe ou non (pas d'énumération d'emails).
+  // Forgot password: sends a password reset link by email.
+  // Same response whether the account exists or not (no email enumeration).
   async forgotPassword(dto: ForgotPasswordDto) {
     if (!this.localMode) {
       throw new BadRequestException(
@@ -208,14 +207,14 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
-    // Pas de compte, ou compte sans mot de passe local → on s'arrête
-    // silencieusement (même réponse), aucun email envoyé.
+    // No account, or account without a local password → stop silently
+    // (same response), no email sent.
     if (!user?.passwordHash || !user.isActive) {
       return generic;
     }
 
-    // Jeton signé, lié à l'empreinte du hash actuel : dès que le mot de passe
-    // change, le lien devient invalide (usage unique, sans migration de schéma).
+    // Signed token tied to a fingerprint of the current hash: as soon as the
+    // password changes, the link becomes invalid (single use, no schema migration).
     const token = jwt.sign(
       { sub: user.id, email: user.email, pf: this.passwordFingerprint(user.passwordHash) },
       this.jwtSecret,
@@ -226,20 +225,20 @@ export class AuthService {
     void this.mail
       .send(
         user.email,
-        'Réinitialisation de votre mot de passe',
-        `${this.mail.heading('Réinitialiser votre mot de passe', 22)}
-         <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${user.firstName ?? ''},</p>
+        'Reset your password',
+        `${this.mail.heading('Reset your password', 22)}
+         <p style="margin:20px 0 4px;color:#1f2124;">Hello ${user.firstName ?? ''},</p>
          <p style="margin:0 0 20px;color:#6b6b6b;">
-           Vous avez demandé à réinitialiser le mot de passe de votre compte
-           Easy Shop Network. Cliquez sur le bouton ci-dessous pour en choisir
-           un nouveau. Ce lien expire dans 1 heure.
+           You requested to reset the password for your Easy Shop Network
+           account. Click the button below to choose a new one. This link
+           expires in 1 hour.
          </p>
          <div style="text-align:center;margin:8px 0 24px;">
-           ${this.mail.button('Réinitialiser mon mot de passe', link, 'primary')}
+           ${this.mail.button('Reset my password', link, 'primary')}
          </div>
          <p style="margin:0;color:#6b6b6b;font-size:13px;">
-           Si vous n'êtes pas à l'origine de cette demande, ignorez cet email :
-           votre mot de passe restera inchangé.
+           If this wasn't you, ignore this email: your password will remain
+           unchanged.
          </p>`,
       )
       .catch(() => undefined);
@@ -247,7 +246,7 @@ export class AuthService {
     return generic;
   }
 
-  // Réinitialise le mot de passe à partir du jeton reçu par email.
+  // Resets the password from the token received by email.
   async resetPassword(dto: ResetPasswordDto) {
     if (!this.localMode) {
       throw new BadRequestException(
@@ -261,21 +260,21 @@ export class AuthService {
       }) as { sub: string; email: string; pf?: string };
     } catch {
       throw new BadRequestException(
-        'Ce lien de réinitialisation est invalide ou a expiré.',
+        'This reset link is invalid or has expired.',
       );
     }
 
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
     });
-    // L'empreinte doit correspondre au hash courant : sinon le lien a déjà
-    // servi (ou le mot de passe a changé entre-temps) → refus.
+    // The fingerprint must match the current hash: otherwise the link has
+    // already been used (or the password changed since) → reject.
     if (
       !user?.passwordHash ||
       payload.pf !== this.passwordFingerprint(user.passwordHash)
     ) {
       throw new BadRequestException(
-        'Ce lien de réinitialisation a déjà été utilisé ou a expiré.',
+        'This reset link has already been used or has expired.',
       );
     }
 
@@ -287,20 +286,18 @@ export class AuthService {
     void this.mail
       .send(
         user.email,
-        'Votre mot de passe a été modifié',
-        `${this.mail.heading('Mot de passe modifié', 22)}
-         <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${user.firstName ?? ''},</p>
+        'Your password has been changed',
+        `${this.mail.heading('Password changed', 22)}
+         <p style="margin:20px 0 4px;color:#1f2124;">Hello ${user.firstName ?? ''},</p>
          <p style="margin:0 0 20px;color:#6b6b6b;">
-           Le mot de passe de votre compte Easy Shop Network vient d'être
-           modifié avec succès. Vous pouvez désormais vous connecter avec votre
-           nouveau mot de passe.
+           The password for your Easy Shop Network account has just been
+           changed successfully. You can now sign in with your new password.
          </p>
          <div style="text-align:center;margin:8px 0 20px;">
-           ${this.mail.button('Se connecter', this.mail.appUrl('/auth/sign-in'), 'primary')}
+           ${this.mail.button('Sign in', this.mail.appUrl('/auth/sign-in'), 'primary')}
          </div>
          <p style="margin:0;color:#6b6b6b;font-size:13px;">
-           Si vous n'êtes pas à l'origine de ce changement, contactez notre
-           support immédiatement.
+           If this wasn't you, contact our support immediately.
          </p>`,
       )
       .catch(() => undefined);
@@ -308,35 +305,35 @@ export class AuthService {
     return { success: true };
   }
 
-  // Empreinte courte et non réversible du hash de mot de passe, pour lier un
-  // jeton de réinitialisation à l'état du mot de passe au moment de l'émission.
+  // Short, non-reversible fingerprint of the password hash, used to tie a
+  // reset token to the state of the password at the time it was issued.
   private passwordFingerprint(passwordHash: string): string {
     return createHash('sha256').update(passwordHash).digest('hex').slice(0, 16);
   }
 
-  // Accès sûr au client Supabase (mode d'auth Supabase uniquement) : renvoie
-  // une erreur 503 explicite si Supabase n'est pas configuré plutôt que de
-  // planter sur un accès à null.
+  // Safe access to the Supabase client (Supabase auth mode only): returns an
+  // explicit 503 error if Supabase isn't configured rather than crashing on
+  // a null access.
   private requireSupabase(): SupabaseClient {
     if (!this.supabase.client) {
       throw new ServiceUnavailableException(
-        "L'authentification Supabase n'est pas configurée sur ce serveur.",
+        'Supabase authentication is not configured on this server.',
       );
     }
     return this.supabase.client;
   }
 
   private welcomeBody(firstName?: string | null): string {
-    return `${this.mail.heading('Bienvenue !', 26)}
-      <p style="margin:20px 0 4px;color:#1f2124;">Bonjour ${firstName ?? ''},</p>
+    return `${this.mail.heading('Welcome!', 26)}
+      <p style="margin:20px 0 4px;color:#1f2124;">Hello ${firstName ?? ''},</p>
       <p style="margin:0 0 20px;color:#6b6b6b;">
-        Votre compte Easy Shop Network a bien été créé. Découvrez notre catalogue
-        et profitez d'une expérience d'achat simple et rapide.
+        Your Easy Shop Network account has been created. Discover our catalog
+        and enjoy a simple, fast shopping experience.
       </p>
       <div style="text-align:center;margin:8px 0;">
-        ${this.mail.button('Découvrir la boutique', this.mail.appUrl('/shop'), 'primary')}
+        ${this.mail.button('Discover the shop', this.mail.appUrl('/shop'), 'primary')}
         &nbsp;
-        ${this.mail.button('Mon compte', this.mail.appUrl('/account'), 'secondary')}
+        ${this.mail.button('My account', this.mail.appUrl('/account'), 'secondary')}
       </div>`;
   }
 
