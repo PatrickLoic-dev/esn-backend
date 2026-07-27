@@ -50,6 +50,20 @@ enum PaymentStatus {
   CANCELED
 }
 
+// How a product is fulfilled: from stock, or made/sourced per order (no
+// stock held — purchase happens via a quote request instead of the cart).
+enum ProductFulfilment {
+  STOCK
+  MADE_TO_ORDER
+}
+
+enum QuoteStatus {
+  PENDING
+  QUOTED
+  ACCEPTED
+  DECLINED
+}
+
 // id mirrors the Supabase Auth user id (auth.users.id)
 model User {
   id        String          @id @default(uuid())
@@ -76,6 +90,7 @@ model User {
   messages  TicketMessage[]
   payments  Payment[]
   reviews   Review[]
+  quotes    QuoteRequest[]
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
 }
@@ -120,15 +135,44 @@ model Product {
   comparePrice Decimal?    @db.Decimal(10, 2)
   sku          String?
   stock        Int         @default(0)
+  // Reorder threshold / max shelf capacity — inventory management, admin-only.
+  stockMin     Int?
+  stockMax     Int?
   imageUrl     String?
   // false = saved as draft (hidden from storefront)
   isActive     Boolean     @default(true)
+  // STOCK: sold from `stock` via the normal cart/checkout.
+  // MADE_TO_ORDER: no stock held — the storefront shows a "Request a quote"
+  // CTA instead of "Add to cart" (the customer is never told it's MTO).
+  fulfilment   ProductFulfilment @default(STOCK)
   category     Category?   @relation(fields: [categoryId], references: [id])
   categoryId   String?
   orderItems   OrderItem[]
   reviews      Review[]
+  quotes       QuoteRequest[]
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
+}
+
+// A customer's request for a quote on a made-to-order product. Replaces the
+// normal cart/checkout flow for MADE_TO_ORDER products.
+model QuoteRequest {
+  id            String      @id @default(uuid())
+  product       Product     @relation(fields: [productId], references: [id])
+  productId     String
+  user          User        @relation(fields: [userId], references: [id])
+  userId        String
+  quantity      Int         @default(1)
+  message       String?
+  status        QuoteStatus @default(PENDING)
+  // Set by staff once priced.
+  quotedPrice   Decimal?    @db.Decimal(10, 2)
+  quotedMessage String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([userId])
+  @@index([status])
 }
 
 model Order {

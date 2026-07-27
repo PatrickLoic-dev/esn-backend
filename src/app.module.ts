@@ -11,6 +11,7 @@ import { UsersModule } from './users/users.module';
 import { CategoriesModule } from './categories/categories.module';
 import { ProductsModule } from './products/products.module';
 import { OrdersModule } from './orders/orders.module';
+import { QuotesModule } from './quotes/quotes.module';
 import { PaymentsModule } from './payments/payments.module';
 import { SavModule } from './sav/sav.module';
 import { AnalyticsModule } from './analytics/analytics.module';
@@ -47,6 +48,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     CategoriesModule,
     ProductsModule,
     OrdersModule,
+    QuotesModule,
     PaymentsModule,
     SavModule,
     AnalyticsModule,
