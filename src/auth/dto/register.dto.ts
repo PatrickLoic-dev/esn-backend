@@ -15,4 +15,9 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   lastName?: string;
+
+  // MLM referral code (optional) entered at sign-up
+  @IsOptional()
+  @IsString()
+  referralCode?: string;
 }

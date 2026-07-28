@@ -19,6 +19,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { MetricsInterceptor } from './metrics/metrics.interceptor';
+import { MlmModule } from './mlm/mlm.module';
 import { HealthModule } from './health/health.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
@@ -56,6 +57,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     AnalyticsModule,
     UploadsModule,
     MetricsModule,
+    MlmModule,
     HealthModule,
   ],
   providers: [

@@ -23,6 +23,7 @@ const PROFILE_SELECT = {
   city: true,
   postalCode: true,
   country: true,
+  pointsBalance: true,
   role: true,
   permissions: true,
   isActive: true,
