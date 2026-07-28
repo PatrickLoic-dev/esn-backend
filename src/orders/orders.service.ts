@@ -7,6 +7,7 @@ import {
 import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
+import { MlmService } from '../mlm/mlm.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { JwtPayload } from '../auth/decorators/current-user.decorator';
 import { isStaff } from '../auth/roles.util';
@@ -24,6 +25,7 @@ export class OrdersService {
   constructor(
     private prisma: PrismaService,
     private mail: MailService,
+    private mlm: MlmService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto) {
@@ -36,6 +38,12 @@ export class OrdersService {
       imageUrl: string | null;
     }[] = [];
     let itemsSubtotal = new Prisma.Decimal(0);
+    // MLM points used (redemption) — computed within the transaction.
+    let pointsUsed = 0;
+    let pointsDiscount = new Prisma.Decimal(0);
+    // Current schedule (point value when spending).
+    const mlmConfig = await this.mlm.getConfig();
+    const pointValue = mlmConfig.pointValueFcfa;
 
     const order = await this.prisma.$transaction(async (tx) => {
       let total = new Prisma.Decimal(0);
@@ -81,11 +89,33 @@ export class OrdersService {
       const shippingCost = dto.shippingCost
         ? new Prisma.Decimal(dto.shippingCost)
         : new Prisma.Decimal(0);
+      const grossTotal = total.add(shippingCost);
+
+      // Points redemption: 100 pts = 10 FCFA (1 pt = 0.1 FCFA).
+      // Capped by both the member's balance AND the order amount.
+      const requested = Math.max(0, Math.floor(dto.pointsToUse ?? 0));
+      if (requested > 0) {
+        const buyer = await tx.user.findUnique({
+          where: { id: userId },
+          select: { pointsBalance: true },
+        });
+        const maxByOrder = Math.floor(grossTotal.toNumber() / pointValue);
+        pointsUsed = Math.min(requested, buyer?.pointsBalance ?? 0, maxByOrder);
+        if (pointsUsed > 0) {
+          pointsDiscount = new Prisma.Decimal(pointsUsed).mul(pointValue);
+          await tx.user.update({
+            where: { id: userId },
+            data: { pointsBalance: { decrement: pointsUsed } },
+          });
+        }
+      }
 
       return tx.order.create({
         data: {
           userId,
-          total: total.add(shippingCost),
+          // Amount actually due after deducting points
+          total: grossTotal.sub(pointsDiscount),
+          pointsUsed,
           shippingAddress: (dto.shippingAddress ??
             undefined) as Prisma.InputJsonValue,
           shippingMethod: dto.shippingMethod,
@@ -98,6 +128,17 @@ export class OrdersService {
         },
       });
     });
+
+    // MLM layer: credits the upline (fire-and-forget). The service sends its
+    // own dedicated email to each referrer. Base = cash paid on the items
+    // (excluding the part settled in points) → no over-attribution. The
+    // points-earned recap does NOT appear in the buyer's order confirmation email.
+    const commissionBase = pointsDiscount.gte(itemsSubtotal)
+      ? new Prisma.Decimal(0)
+      : itemsSubtotal.sub(pointsDiscount);
+    void this.mlm
+      .awardForOrder(order.id, userId, commissionBase)
+      .catch(() => undefined);
 
     // Order confirmation email (fire-and-forget, non-blocking)
     const ref = order.id.slice(0, 8).toUpperCase();
@@ -192,6 +233,14 @@ export class OrdersService {
              ${rowsHtml}
              ${totalRow('Subtotal', `${itemsSubtotal.toFixed(2)} FCFA`)}
              ${totalRow('Shipping', `${shippingCost.toFixed(2)} FCFA`)}
+             ${
+               pointsUsed > 0
+                 ? totalRow(
+                     `Points used (${pointsUsed} pts)`,
+                     `- ${pointsDiscount.toFixed(2)} FCFA`,
+                   )
+                 : ''
+             }
              ${totalRow('Total', `${order.total.toFixed(2)} FCFA`, true)}
            </table>
          </div>

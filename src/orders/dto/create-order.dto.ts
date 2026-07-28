@@ -41,4 +41,10 @@ export class CreateOrderDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   shippingCost?: number;
+
+  // MLM points to use to reduce the amount due (100 pts = 10 FCFA)
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  pointsToUse?: number;
 }

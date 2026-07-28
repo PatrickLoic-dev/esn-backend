@@ -12,6 +12,7 @@ import * as jwt from 'jsonwebtoken';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { MailService } from '../mail/mail.service';
+import { MlmService } from '../mlm/mlm.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
@@ -33,6 +34,7 @@ export class AuthService {
     private prisma: PrismaService,
     private supabase: SupabaseService,
     private mail: MailService,
+    private mlm: MlmService,
     config: ConfigService,
   ) {
     // AUTH_MODE=local issues our own HS256 tokens (same secret/audience the
@@ -61,6 +63,9 @@ export class AuthService {
           lastName: dto.lastName,
         },
       });
+      // Couche MLM : code de parrainage + rattachement au parrain (si code fourni)
+      await this.mlm.ensureReferralCode(user.id);
+      await this.mlm.linkReferrer(user.id, dto.referralCode);
       void this.mail
         .send(dto.email, 'Welcome to Easy Shop Network', this.welcomeBody(dto.firstName))
         .catch(() => undefined);
@@ -88,6 +93,10 @@ export class AuthService {
       },
       update: {},
     });
+
+    // Couche MLM : code de parrainage + rattachement au parrain (si code fourni)
+    await this.mlm.ensureReferralCode(data.user.id);
+    await this.mlm.linkReferrer(data.user.id, dto.referralCode);
 
     void this.mail.send(
       dto.email,

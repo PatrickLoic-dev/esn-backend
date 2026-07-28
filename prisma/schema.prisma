@@ -74,7 +74,7 @@ model User {
   lastName  String?
   phone     String?
   avatarUrl String?
-  // Adresse par défaut du client (préremplit le checkout)
+  // Customer's default address (pre-fills checkout)
   address    String?
   city       String?
   postalCode String?
@@ -91,8 +91,53 @@ model User {
   payments  Payment[]
   reviews   Review[]
   quotes    QuoteRequest[]
+  // ---- MLM / affiliation layer (points, 3 levels) ----
+  // Unique referral code to share (e.g. ESN-7K2M9Q)
+  referralCode  String?  @unique
+  // Direct referrer (level 1 upline). Builds the referral tree.
+  referredBy    User?    @relation("Referral", fields: [referredById], references: [id])
+  referredById  String?
+  referrals     User[]   @relation("Referral")
+  // Cumulative points balance (denormalized; history is in the ledger)
+  pointsBalance Int      @default(0)
+  pointsEarned    ReferralCommission[] @relation("Beneficiary")
+  pointsGenerated ReferralCommission[] @relation("Source")
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
+}
+
+// Configurable MLM schedule (single row). Editable by admin/moderator.
+model MlmConfig {
+  id                 String   @id @default("default")
+  // Taux de gain de points par niveau (fraction de la valeur commande)
+  level1Rate         Float    @default(0.10)
+  level2Rate         Float    @default(0.05)
+  level3Rate         Float    @default(0.02)
+  // Value of a point when spending, in FCFA (0.1 => 100 pts = 10 FCFA)
+  pointValueFcfa     Float    @default(0.10)
+  // Maximum number of direct referrals per member (0 = unlimited)
+  maxDirectReferrals Int      @default(3)
+  updatedAt          DateTime @updatedAt
+}
+
+// MLM points ledger: one row per tier credited on a purchase.
+model ReferralCommission {
+  id            String   @id @default(uuid())
+  // Beneficiary (upline member) credited the points
+  beneficiary   User     @relation("Beneficiary", fields: [beneficiaryId], references: [id])
+  beneficiaryId String
+  // Referral whose purchase generated the points
+  source        User     @relation("Source", fields: [sourceId], references: [id])
+  sourceId      String
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId       String
+  level         Int      // 1 (direct), 2 ou 3
+  points        Int
+  createdAt     DateTime @default(now())
+
+  // Idempotence: a beneficiary can only be credited once per order
+  @@unique([orderId, beneficiaryId])
+  @@index([beneficiaryId])
 }
 
 model Review {
@@ -185,6 +230,8 @@ model Order {
   shippingAddress Json?
   shippingMethod  String?
   shippingCost    Decimal? @db.Decimal(10, 2)
+  // MLM points used to pay for part of this order (100 pts = 10 FCFA)
+  pointsUsed      Int      @default(0)
   // set by admin when fulfilling
   trackingNumber  String?
   carrier         String?
@@ -192,6 +239,7 @@ model Order {
   items     OrderItem[]
   payments  Payment[]
   tickets   Ticket[]
+  referralCommissions ReferralCommission[]
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 }
@@ -265,7 +313,7 @@ model AnalyticsEvent {
   @@index([name, createdAt])
 }
 
-// Agrégat quotidien de disponibilité par service (pour la heatmap façon commits).
+// Daily uptime aggregate per service (for the commits-style heatmap).
 model ServiceDay {
   service String
   day     String // YYYY-MM-DD (UTC)
