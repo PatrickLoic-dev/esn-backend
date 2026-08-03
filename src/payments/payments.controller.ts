@@ -4,8 +4,10 @@ import {
   Get,
   Headers,
   HttpCode,
+  Param,
   Post,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
@@ -13,6 +15,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { PaymentsService } from './payments.service';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
 import { Public } from '../auth/decorators/public.decorator';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { JwtPayload } from '../auth/decorators/current-user.decorator';
 
@@ -29,9 +32,14 @@ export class PaymentsController {
     private config: ConfigService,
   ) {}
 
-  @ApiBearerAuth()
+  // Public: guest checkout may pay for its own order without an account.
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Post('initiate')
-  initiate(@CurrentUser() user: JwtPayload, @Body() dto: InitiatePaymentDto) {
+  initiate(
+    @CurrentUser() user: JwtPayload | undefined,
+    @Body() dto: InitiatePaymentDto,
+  ) {
     return this.paymentsService.initiate(user, dto);
   }
 
@@ -39,6 +47,18 @@ export class PaymentsController {
   @Get()
   findAll(@CurrentUser() user: JwtPayload) {
     return this.paymentsService.findAllForUser(user);
+  }
+
+  // Polled by the checkout callback page while waiting for Notch Pay's
+  // webhook. Public: a guest needs to check their own just-placed payment.
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get('reference/:reference')
+  findByReference(
+    @Param('reference') reference: string,
+    @CurrentUser() user: JwtPayload | undefined,
+  ) {
+    return this.paymentsService.findByReference(reference, user);
   }
 
   // Notch Pay calls this endpoint; authenticity is proven by the HMAC signature
