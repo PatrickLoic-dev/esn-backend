@@ -24,18 +24,27 @@ export class PaymentsService {
     private mail: MailService,
   ) {}
 
-  async initiate(user: JwtPayload, dto: InitiatePaymentDto) {
+  async initiate(user: JwtPayload | undefined, dto: InitiatePaymentDto) {
     const order = await this.prisma.order.findUnique({
       where: { id: dto.orderId },
     });
     if (!order) {
       throw new NotFoundException(`Order ${dto.orderId} not found`);
     }
-    if (order.userId !== user.sub) {
+    // A signed-in user may only pay an order that's theirs. Orders with no
+    // owner (guest checkout, no matching account) can be paid by whoever has
+    // the order id — the same trust model as a one-time payment link.
+    if (order.userId && user && order.userId !== user.sub) {
       throw new ForbiddenException();
     }
     if (order.status !== OrderStatus.PENDING) {
       throw new BadRequestException('Order is not awaiting payment');
+    }
+
+    const address = (order.shippingAddress ?? {}) as { email?: string };
+    const email = user?.email ?? order.guestEmail ?? address.email;
+    if (!email) {
+      throw new BadRequestException('No email on file for this order');
     }
 
     const reference = `order_${order.id}_${randomUUID().slice(0, 8)}`;
@@ -43,7 +52,7 @@ export class PaymentsService {
       // XAF has no minor units — Notch Pay rejects fractional amounts
       amount: Math.round(order.total.toNumber()),
       currency: 'XAF',
-      email: user.email,
+      email,
       phone: dto.phone,
       reference,
       description: `Payment for order ${order.id}`,
@@ -52,7 +61,7 @@ export class PaymentsService {
     const payment = await this.prisma.payment.create({
       data: {
         orderId: order.id,
-        userId: user.sub,
+        userId: order.userId,
         reference: init.transaction.reference,
         method: dto.method,
         amount: order.total,
@@ -71,7 +80,7 @@ export class PaymentsService {
   async handleWebhookEvent(event: string, transaction: { reference: string }) {
     const payment = await this.prisma.payment.findUnique({
       where: { reference: transaction.reference },
-      include: { user: true },
+      include: { user: true, order: true },
     });
     if (!payment) {
       this.logger.warn(
@@ -81,21 +90,23 @@ export class PaymentsService {
     }
 
     if (event === 'payment.complete') {
-      await this.prisma.$transaction([
-        this.prisma.payment.update({
-          where: { id: payment.id },
-          data: { status: PaymentStatus.COMPLETE },
-        }),
-        this.prisma.order.update({
-          where: { id: payment.orderId },
-          data: { status: OrderStatus.PAID },
-        }),
-      ]);
-      void this.mail.send(
-        payment.user.email,
-        'Payment confirmed',
-        `<p>Your payment of ${payment.amount.toString()} ${payment.currency} for order <b>${payment.orderId}</b> was successful.</p>`,
-      );
+      // Order.status tracks fulfillment (PENDING -> SHIPPED -> DELIVERED), not
+      // payment — payment state lives entirely on the Payment record itself.
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: PaymentStatus.COMPLETE },
+      });
+      const address = (payment.order.shippingAddress ?? {}) as {
+        email?: string;
+      };
+      const email = payment.user?.email ?? payment.order.guestEmail ?? address.email;
+      if (email) {
+        void this.mail.send(
+          email,
+          'Payment confirmed',
+          `<p>Your payment of ${payment.amount.toString()} ${payment.currency} for order <b>${payment.orderId}</b> was successful.</p>`,
+        );
+      }
     } else if (event === 'payment.failed' || event === 'payment.canceled') {
       await this.prisma.payment.update({
         where: { id: payment.id },
@@ -116,5 +127,27 @@ export class PaymentsService {
       where,
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  // Polled by the checkout callback page while waiting for the webhook to
+  // land. Guest payments (no owning account) are readable by anyone with the
+  // reference — same trust model as the payment link itself.
+  async findByReference(reference: string, user: JwtPayload | undefined) {
+    const payment = await this.prisma.payment.findUnique({
+      where: { reference },
+      include: { order: { select: { userId: true } } },
+    });
+    if (!payment) {
+      throw new NotFoundException(`Payment ${reference} not found`);
+    }
+    if (
+      payment.userId &&
+      payment.userId !== user?.sub &&
+      !(user && isStaff(user.role))
+    ) {
+      throw new ForbiddenException();
+    }
+    const { order, ...rest } = payment;
+    return { ...rest, requiresRegistration: !order.userId };
   }
 }

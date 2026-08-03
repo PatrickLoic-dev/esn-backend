@@ -291,7 +291,7 @@ export class AnalyticsService {
         this.prisma.order.count(),
         this.prisma.order.aggregate({
           _sum: { total: true },
-          where: { status: { in: [OrderStatus.PAID, OrderStatus.SHIPPED, OrderStatus.DELIVERED] } },
+          where: { status: { in: [OrderStatus.SHIPPED, OrderStatus.DELIVERED] } },
         }),
         this.prisma.ticket.count({ where: { status: 'OPEN' } }),
         this.prisma.analyticsEvent.groupBy({

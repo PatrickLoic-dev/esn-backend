@@ -63,9 +63,10 @@ export class AuthService {
           lastName: dto.lastName,
         },
       });
-      // Couche MLM : code de parrainage + rattachement au parrain (si code fourni)
+      // MLM layer: referral code + link to referrer (if a code was provided)
       await this.mlm.ensureReferralCode(user.id);
       await this.mlm.linkReferrer(user.id, dto.referralCode);
+      await this.claimGuestOrders(user.id, dto.email);
       void this.mail
         .send(dto.email, 'Welcome to Easy Shop Network', this.welcomeBody(dto.firstName))
         .catch(() => undefined);
@@ -94,9 +95,10 @@ export class AuthService {
       update: {},
     });
 
-    // Couche MLM : code de parrainage + rattachement au parrain (si code fourni)
+    // MLM layer: referral code + link to referrer (if a code was provided)
     await this.mlm.ensureReferralCode(data.user.id);
     await this.mlm.linkReferrer(data.user.id, dto.referralCode);
+    await this.claimGuestOrders(data.user.id, dto.email);
 
     void this.mail.send(
       dto.email,
@@ -202,6 +204,17 @@ export class AuthService {
       data: { passwordHash: await bcrypt.hash(dto.newPassword, 10) },
     });
     return { success: true };
+  }
+
+  // Attaches any guest orders placed under this email (no account existed
+  // yet at checkout) to the account that's just been created, so the
+  // customer finds their order history — and can start earning MLM points
+  // going forward — as soon as they sign up.
+  private async claimGuestOrders(userId: string, email: string) {
+    await this.prisma.order.updateMany({
+      where: { guestEmail: email, userId: null },
+      data: { userId, guestEmail: null },
+    });
   }
 
   // Forgot password: sends a password reset link by email.

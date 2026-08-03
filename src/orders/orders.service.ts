@@ -13,8 +13,7 @@ import { JwtPayload } from '../auth/decorators/current-user.decorator';
 import { isStaff } from '../auth/roles.util';
 
 const STATUS_MESSAGE: Record<OrderStatus, string> = {
-  PENDING: 'has been received and is awaiting payment',
-  PAID: 'has been paid and is being prepared',
+  PENDING: 'has been received and is being prepared',
   SHIPPED: 'has been shipped and is on its way',
   DELIVERED: 'has been delivered — enjoy!',
   CANCELLED: 'has been cancelled',
@@ -28,7 +27,31 @@ export class OrdersService {
     private mlm: MlmService,
   ) {}
 
-  async create(userId: string, dto: CreateOrderDto) {
+  // `userId` is undefined for guest checkout (no auth). In that case the
+  // shipping address email is required: if it matches an existing account,
+  // the order is linked to that account; otherwise it's saved as a guest
+  // order (`guestEmail` set, `userId` null) until the customer registers.
+  async create(userId: string | undefined, dto: CreateOrderDto) {
+    let ownerId = userId;
+    let guestEmail: string | undefined;
+    if (!ownerId) {
+      const email = dto.shippingAddress?.email?.trim();
+      if (!email) {
+        throw new BadRequestException(
+          'Email is required to place an order without an account.',
+        );
+      }
+      const existing = await this.prisma.user.findUnique({
+        where: { email },
+        select: { id: true },
+      });
+      if (existing) {
+        ownerId = existing.id;
+      } else {
+        guestEmail = email;
+      }
+    }
+
     // Summary rows (name/quantity/price) for the confirmation email
     const summaryRows: {
       name: string;
@@ -93,10 +116,13 @@ export class OrdersService {
 
       // Points redemption: 100 pts = 10 FCFA (1 pt = 0.1 FCFA).
       // Capped by both the member's balance AND the order amount.
-      const requested = Math.max(0, Math.floor(dto.pointsToUse ?? 0));
-      if (requested > 0) {
+      // Only accounts can hold points — guest orders never redeem any.
+      const requested = ownerId
+        ? Math.max(0, Math.floor(dto.pointsToUse ?? 0))
+        : 0;
+      if (requested > 0 && ownerId) {
         const buyer = await tx.user.findUnique({
-          where: { id: userId },
+          where: { id: ownerId },
           select: { pointsBalance: true },
         });
         const maxByOrder = Math.floor(grossTotal.toNumber() / pointValue);
@@ -104,7 +130,7 @@ export class OrdersService {
         if (pointsUsed > 0) {
           pointsDiscount = new Prisma.Decimal(pointsUsed).mul(pointValue);
           await tx.user.update({
-            where: { id: userId },
+            where: { id: ownerId },
             data: { pointsBalance: { decrement: pointsUsed } },
           });
         }
@@ -112,7 +138,8 @@ export class OrdersService {
 
       return tx.order.create({
         data: {
-          userId,
+          userId: ownerId,
+          guestEmail,
           // Amount actually due after deducting points
           total: grossTotal.sub(pointsDiscount),
           pointsUsed,
@@ -133,12 +160,15 @@ export class OrdersService {
     // own dedicated email to each referrer. Base = cash paid on the items
     // (excluding the part settled in points) → no over-attribution. The
     // points-earned recap does NOT appear in the buyer's order confirmation email.
-    const commissionBase = pointsDiscount.gte(itemsSubtotal)
-      ? new Prisma.Decimal(0)
-      : itemsSubtotal.sub(pointsDiscount);
-    void this.mlm
-      .awardForOrder(order.id, userId, commissionBase)
-      .catch(() => undefined);
+    // Skipped entirely for guest orders (no account, so no upline to credit).
+    if (ownerId) {
+      const commissionBase = pointsDiscount.gte(itemsSubtotal)
+        ? new Prisma.Decimal(0)
+        : itemsSubtotal.sub(pointsDiscount);
+      void this.mlm
+        .awardForOrder(order.id, ownerId, commissionBase)
+        .catch(() => undefined);
+    }
 
     // Order confirmation email (fire-and-forget, non-blocking)
     const ref = order.id.slice(0, 8).toUpperCase();
@@ -204,18 +234,22 @@ export class OrdersService {
           ${strong ? `border-top:2px solid ${ink};` : ''}">${value}</td>
       </tr>`;
 
-    void this.mail
-      .send(
-        order.user.email,
-        `Your order confirmation ${ref}`,
-        `<div style="text-align:center;">
+    const recipientEmail = order.user?.email ?? guestEmail ?? a.email;
+    const recipientFirstName = order.user?.firstName ?? a.fullName?.split(' ')[0];
+
+    if (recipientEmail) {
+      void this.mail
+        .send(
+          recipientEmail,
+          `Your order confirmation ${ref}`,
+          `<div style="text-align:center;">
            ${this.mail.heading('Order confirmed', 26)}
            <p style="margin:8px 0 0;color:${sub};font-size:13px;letter-spacing:0.5px;">
              ORDER #${ref} · ${orderDate}
            </p>
          </div>
          <p style="margin:24px 0 4px;color:${ink};">
-           Hello ${order.user.firstName ?? ''}, thank you for your purchase!
+           Hello ${recipientFirstName ?? ''}, thank you for your purchase!
          </p>
          <p style="margin:0 0 20px;color:${sub};">
            We're preparing your order. You'll be notified as soon as it ships.
@@ -253,10 +287,13 @@ export class OrdersService {
                </div>`
              : ''
          }`,
-      )
-      .catch(() => undefined);
+        )
+        .catch(() => undefined);
+    }
 
-    return order;
+    // The confirmation page nudges the customer to register only when this
+    // order isn't tied to any account yet (true guest checkout).
+    return { ...order, requiresRegistration: !order.userId };
   }
 
   findAllForUser(user: JwtPayload) {
@@ -311,14 +348,15 @@ export class OrdersService {
       include: { user: { select: { email: true, firstName: true } } },
     });
     // Automatically notifies the customer of the new status (if it actually changed)
-    if (status !== order.status) {
+    const updatedEmail = updated.user?.email ?? updated.guestEmail;
+    if (status !== order.status && updatedEmail) {
       const ref = updated.id.slice(0, 8).toUpperCase();
       void this.mail
         .send(
-          updated.user.email,
+          updatedEmail,
           `Update on your order ${ref}`,
           `${this.mail.heading('Update on your order', 22)}
-           <p style="margin:20px 0 4px;color:#1f2124;">Hello ${updated.user.firstName ?? ''},</p>
+           <p style="margin:20px 0 4px;color:#1f2124;">Hello ${updated.user?.firstName ?? ''},</p>
            <p style="margin:0 0 20px;color:#6b6b6b;">
              Your order <strong style="color:#1f2124;">#${ref}</strong> ${STATUS_MESSAGE[status]}.
            </p>
@@ -340,12 +378,16 @@ export class OrdersService {
     if (!order) {
       throw new NotFoundException(`Order ${id} not found`);
     }
+    const email = order.user?.email ?? order.guestEmail;
+    if (!email) {
+      throw new BadRequestException('This order has no contactable email.');
+    }
     const ref = order.id.slice(0, 8).toUpperCase();
     await this.mail.send(
-      order.user.email,
+      email,
       `Update on your order ${ref}`,
       `${this.mail.heading('Update on your order', 22)}
-       <p style="margin:20px 0 4px;color:#1f2124;">Hello ${order.user.firstName ?? ''},</p>
+       <p style="margin:20px 0 4px;color:#1f2124;">Hello ${order.user?.firstName ?? ''},</p>
        <p style="margin:0 0 20px;color:#6b6b6b;">
          Your order <strong style="color:#1f2124;">#${ref}</strong> ${STATUS_MESSAGE[order.status]}.
        </p>
