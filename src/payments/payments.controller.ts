@@ -6,9 +6,11 @@ import {
   HttpCode,
   Param,
   Post,
+  Req,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
@@ -67,21 +69,27 @@ export class PaymentsController {
   @HttpCode(200)
   webhook(
     @Body() body: NotchPayWebhookBody,
+    @Req() req: Request & { rawBody?: Buffer },
     @Headers('x-notch-signature') signature: string,
   ) {
-    this.verifySignature(body, signature);
+    this.verifySignature(req.rawBody, signature);
     return this.paymentsService.handleWebhookEvent(body.event, body.data);
   }
 
-  private verifySignature(body: unknown, signature: string | undefined) {
+  private verifySignature(rawBody: Buffer | undefined, signature: string | undefined) {
     if (!signature) {
       throw new UnauthorizedException('Missing webhook signature');
     }
+    if (!rawBody) {
+      throw new UnauthorizedException('Missing raw request body');
+    }
+    // Must be computed over the exact bytes Notch Pay sent — re-serializing
+    // the parsed body with JSON.stringify would never match their signature.
     const expected = createHmac(
       'sha256',
       this.config.getOrThrow<string>('NOTCHPAY_HASH_KEY'),
     )
-      .update(JSON.stringify(body))
+      .update(rawBody)
       .digest('hex');
     const a = Buffer.from(signature);
     const b = Buffer.from(expected);
