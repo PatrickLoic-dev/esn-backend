@@ -22,7 +22,19 @@ async function bootstrap() {
     use: (m: unknown) => void;
   };
   const { json, urlencoded } = await import('express');
-  express.use(json({ limit: '1mb' }));
+  express.use(
+    json({
+      limit: '1mb',
+      // Keep the exact raw bytes alongside the parsed body: the Notch Pay
+      // webhook signature is an HMAC over the original request bytes, and
+      // re-serializing the parsed object with JSON.stringify never
+      // reproduces them byte-for-byte (key order, spacing, number
+      // formatting can all differ) — verifying against that would always fail.
+      verify: (req: unknown, _res, buf) => {
+        (req as { rawBody?: Buffer }).rawBody = buf;
+      },
+    }),
+  );
   express.use(urlencoded({ extended: true, limit: '1mb' }));
 
   app.setGlobalPrefix('api');
