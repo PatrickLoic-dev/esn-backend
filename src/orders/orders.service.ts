@@ -8,6 +8,7 @@ import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { MlmService } from '../mlm/mlm.service';
+import { PromoService } from '../promo/promo.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { JwtPayload } from '../auth/decorators/current-user.decorator';
 import { isStaff } from '../auth/roles.util';
@@ -25,6 +26,7 @@ export class OrdersService {
     private prisma: PrismaService,
     private mail: MailService,
     private mlm: MlmService,
+    private promo: PromoService,
   ) {}
 
   // `userId` is undefined for guest checkout (no auth). In that case the
@@ -52,6 +54,15 @@ export class OrdersService {
       }
     }
 
+    // Promo code (optional): resolved once up front — an invalid/expired
+    // code fails the whole order rather than silently charging full price.
+    const promo = dto.promoCode
+      ? await this.promo.findValidByCode(dto.promoCode)
+      : null;
+    if (dto.promoCode && !promo) {
+      throw new BadRequestException('This promo code is invalid or has expired.');
+    }
+
     // Summary rows (name/quantity/price) for the confirmation email
     const summaryRows: {
       name: string;
@@ -61,6 +72,9 @@ export class OrdersService {
       imageUrl: string | null;
     }[] = [];
     let itemsSubtotal = new Prisma.Decimal(0);
+    // Subtotal of items the promo actually applies to (per its scope).
+    let promoEligibleSubtotal = new Prisma.Decimal(0);
+    let promoDiscount = new Prisma.Decimal(0);
     // MLM points used (redemption) — computed within the transaction.
     let pointsUsed = 0;
     let pointsDiscount = new Prisma.Decimal(0);
@@ -95,6 +109,9 @@ export class OrdersService {
         const lineTotal = product.price.mul(item.quantity);
         total = total.add(lineTotal);
         itemsSubtotal = itemsSubtotal.add(lineTotal);
+        if (promo && this.promo.isEligible(promo, product)) {
+          promoEligibleSubtotal = promoEligibleSubtotal.add(lineTotal);
+        }
         items.push({
           productId: product.id,
           quantity: item.quantity,
@@ -109,13 +126,17 @@ export class OrdersService {
         });
       }
 
+      if (promo) {
+        promoDiscount = this.promo.discountFor(promo.percentOff, promoEligibleSubtotal);
+      }
+
       const shippingCost = dto.shippingCost
         ? new Prisma.Decimal(dto.shippingCost)
         : new Prisma.Decimal(0);
-      const grossTotal = total.add(shippingCost);
+      const afterPromo = total.add(shippingCost).sub(promoDiscount);
 
       // Points redemption: 100 pts = 10 FCFA (1 pt = 0.1 FCFA).
-      // Capped by both the member's balance AND the order amount.
+      // Capped by both the member's balance AND the (post-promo) order amount.
       // Only accounts can hold points — guest orders never redeem any.
       const requested = ownerId
         ? Math.max(0, Math.floor(dto.pointsToUse ?? 0))
@@ -125,7 +146,7 @@ export class OrdersService {
           where: { id: ownerId },
           select: { pointsBalance: true },
         });
-        const maxByOrder = Math.floor(grossTotal.toNumber() / pointValue);
+        const maxByOrder = Math.floor(afterPromo.toNumber() / pointValue);
         pointsUsed = Math.min(requested, buyer?.pointsBalance ?? 0, maxByOrder);
         if (pointsUsed > 0) {
           pointsDiscount = new Prisma.Decimal(pointsUsed).mul(pointValue);
@@ -140,9 +161,11 @@ export class OrdersService {
         data: {
           userId: ownerId,
           guestEmail,
-          // Amount actually due after deducting points
-          total: grossTotal.sub(pointsDiscount),
+          // Amount actually due after deducting the promo and points
+          total: afterPromo.sub(pointsDiscount),
           pointsUsed,
+          promoCodeId: promo?.id,
+          promoDiscount: promo ? promoDiscount : undefined,
           shippingAddress: (dto.shippingAddress ??
             undefined) as Prisma.InputJsonValue,
           shippingMethod: dto.shippingMethod,
@@ -162,9 +185,8 @@ export class OrdersService {
     // points-earned recap does NOT appear in the buyer's order confirmation email.
     // Skipped entirely for guest orders (no account, so no upline to credit).
     if (ownerId) {
-      const commissionBase = pointsDiscount.gte(itemsSubtotal)
-        ? new Prisma.Decimal(0)
-        : itemsSubtotal.sub(pointsDiscount);
+      let commissionBase = itemsSubtotal.sub(pointsDiscount).sub(promoDiscount);
+      if (commissionBase.isNegative()) commissionBase = new Prisma.Decimal(0);
       void this.mlm
         .awardForOrder(order.id, ownerId, commissionBase)
         .catch(() => undefined);
@@ -266,6 +288,14 @@ export class OrdersService {
              style="border-collapse:collapse;margin-top:8px;">
              ${rowsHtml}
              ${totalRow('Subtotal', `${itemsSubtotal.toFixed(2)} FCFA`)}
+             ${
+               order.promoCodeId
+                 ? totalRow(
+                     `Promo applied${promo ? ` (${promo.code})` : ''}`,
+                     `- ${promoDiscount.toFixed(2)} FCFA`,
+                   )
+                 : ''
+             }
              ${totalRow('Shipping', `${shippingCost.toFixed(2)} FCFA`)}
              ${
                pointsUsed > 0
