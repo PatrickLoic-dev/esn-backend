@@ -101,6 +101,8 @@ model User {
   pointsBalance Int      @default(0)
   pointsEarned    ReferralCommission[] @relation("Beneficiary")
   pointsGenerated ReferralCommission[] @relation("Source")
+  // One customer-authored testimonial per account (staff-curated ones have no userId).
+  testimonial Testimonial?
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
 }
@@ -166,6 +168,7 @@ model Category {
   featured    Boolean   @default(false)
   isActive    Boolean   @default(true)
   products    Product[]
+  promoCodes  PromoCode[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }
@@ -235,6 +238,11 @@ model Order {
   shippingCost    Decimal? @db.Decimal(10, 2)
   // MLM points used to pay for part of this order (100 pts = 10 FCFA)
   pointsUsed      Int      @default(0)
+  // Promo code applied at checkout, if any. Kept even if the code is later
+  // retired so past orders still show what was used.
+  promoCode       PromoCode? @relation(fields: [promoCodeId], references: [id])
+  promoCodeId     String?
+  promoDiscount   Decimal?   @db.Decimal(10, 2)
   // set by admin when fulfilling
   trackingNumber  String?
   carrier         String?
@@ -340,22 +348,46 @@ model ServiceIncident {
   @@index([service, startedAt])
 }
 
-// Single configurable row: the promo message shown in the header's
-// announcement bar, centered on the Affiliate Program line. `code` is kept
-// separate from `message` so the admin UI can show/copy it distinctly, but
-// the storefront just renders `message` as-is (author includes the code in
-// the wording if they want it visible, e.g. "10% off with code WELCOME10").
-model PromoBanner {
-  id        String   @id @default("default")
-  message   String   @default("")
-  code      String?
-  active    Boolean  @default(false)
-  updatedAt DateTime @updatedAt
+// What a PromoCode's discount applies to:
+// ORDER = whole order subtotal, CATEGORY = items in one category,
+// NEW_PRODUCTS = items added to the catalog in the last 30 days.
+enum PromoScope {
+  ORDER
+  CATEGORY
+  NEW_PRODUCTS
 }
 
-// A customer/partner testimonial shown on the homepage.
+// A discount code. Kept forever (never hard-deleted) — retiring one by
+// setting `active: false` keeps a full history table in the admin panel and
+// preserves the code referenced by past orders.
+model PromoCode {
+  id          String     @id @default(uuid())
+  code        String     @unique
+  description String?
+  // Whole percentage points off the eligible subtotal, 1-100.
+  percentOff  Int
+  scope       PromoScope @default(ORDER)
+  // Only set (and only meaningful) when scope = CATEGORY.
+  category    Category?  @relation(fields: [categoryId], references: [id])
+  categoryId  String?
+  active      Boolean    @default(true)
+  // Optional validity window; null = no bound on that side.
+  startsAt    DateTime?
+  endsAt      DateTime?
+  orders      Order[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+// A customer/partner testimonial shown on the homepage. Customer-submitted
+// ones (userId set) start inactive, pending admin approval; staff-curated
+// ones (userId null, created directly by an admin) are active immediately.
 model Testimonial {
   id          String   @id @default(uuid())
+  // Set only for a customer's own submission — one per account (upsert, like
+  // product reviews). Null for testimonials an admin added directly.
+  user        User?    @relation(fields: [userId], references: [id])
+  userId      String?  @unique
   authorName  String
   authorTitle String?
   avatarUrl   String?

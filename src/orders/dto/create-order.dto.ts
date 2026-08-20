@@ -47,4 +47,8 @@ export class CreateOrderDto {
   @IsInt()
   @Min(0)
   pointsToUse?: number;
+
+  @IsOptional()
+  @IsString()
+  promoCode?: string;
 }

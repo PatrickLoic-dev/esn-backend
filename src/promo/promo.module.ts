@@ -5,5 +5,7 @@ import { PromoService } from './promo.service';
 @Module({
   controllers: [PromoController],
   providers: [PromoService],
+  // Exported so Orders can resolve/apply a code at checkout.
+  exports: [PromoService],
 })
 export class PromoModule {}
