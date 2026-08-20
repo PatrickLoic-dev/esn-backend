@@ -156,11 +156,12 @@ export class ProductsService {
     }
   }
 
-  // Admin: bulk-create products from an uploaded .xlsx/.csv file. Each row
-  // is validated and inserted independently — one bad row doesn't block the
-  // rest — and the row-by-row outcome is returned so the admin can fix and
-  // re-upload just the failures.
-  async importFromExcel(buffer: Buffer): Promise<ImportProductsResult> {
+  // Parses + validates every row without touching the database. Shared by
+  // the preview (dry-run) and the actual import, so they can never disagree
+  // about which rows are valid.
+  private async validateRows(buffer: Buffer): Promise<
+    { row: number; data: CreateProductDto | null; error: string | null }[]
+  > {
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
@@ -174,18 +175,58 @@ export class ProductsService {
       categories.map((c) => [c.name.trim().toLowerCase(), c.id]),
     );
 
-    const result: ImportProductsResult = { created: 0, errors: [] };
-
-    for (let i = 0; i < rows.length; i++) {
-      const rowNumber = i + 2; // header is row 1
-      const row = mapRow(rows[i]);
+    return rows.map((raw, i) => {
+      const row = mapRow(raw);
       try {
         const data = this.rowToProductData(row, categoryIdByName);
-        await this.prisma.product.create({ data });
+        return { row: i + 2, data, error: null }; // header is row 1
+      } catch (err) {
+        return {
+          row: i + 2,
+          data: null,
+          error: err instanceof Error ? err.message : 'Unknown error',
+        };
+      }
+    });
+  }
+
+  // Admin: dry-run of an uploaded .xlsx/.csv file — validates every row
+  // without inserting anything, so the admin can review exactly what will
+  // and won't be created before confirming.
+  async previewImport(buffer: Buffer): Promise<{
+    willInsert: { row: number; product: CreateProductDto }[];
+    willReject: { row: number; message: string }[];
+  }> {
+    const results = await this.validateRows(buffer);
+    return {
+      willInsert: results
+        .filter((r) => r.data)
+        .map((r) => ({ row: r.row, product: r.data! })),
+      willReject: results
+        .filter((r) => r.error)
+        .map((r) => ({ row: r.row, message: r.error! })),
+    };
+  }
+
+  // Admin: bulk-create products from an uploaded .xlsx/.csv file. Each row
+  // is validated and inserted independently — one bad row doesn't block the
+  // rest — and the row-by-row outcome is returned so the admin can fix and
+  // re-upload just the failures.
+  async importFromExcel(buffer: Buffer): Promise<ImportProductsResult> {
+    const results = await this.validateRows(buffer);
+    const result: ImportProductsResult = { created: 0, errors: [] };
+
+    for (const r of results) {
+      if (!r.data) {
+        result.errors.push({ row: r.row, message: r.error! });
+        continue;
+      }
+      try {
+        await this.prisma.product.create({ data: r.data });
         result.created++;
       } catch (err) {
         result.errors.push({
-          row: rowNumber,
+          row: r.row,
           message: err instanceof Error ? err.message : 'Unknown error',
         });
       }

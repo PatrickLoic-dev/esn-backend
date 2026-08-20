@@ -31,21 +31,35 @@ export class ProductsController {
     return this.productsService.create(dto);
   }
 
+  private static readonly IMPORT_FILE_VALIDATORS = [
+    new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5 MB
+    new FileTypeValidator({
+      fileType:
+        /^(application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-excel|text\/csv)$/,
+    }),
+  ];
+
+  // Admin: dry-run of an uploaded .xlsx/.csv file — validates every row
+  // without inserting anything, for a before-you-commit preview.
+  @Roles(Role.ADMIN)
+  @Post('import/preview')
+  @UseInterceptors(FileInterceptor('file'))
+  importPreview(
+    @UploadedFile(
+      new ParseFilePipe({ validators: ProductsController.IMPORT_FILE_VALIDATORS }),
+    )
+    file: Express.Multer.File,
+  ) {
+    return this.productsService.previewImport(file.buffer);
+  }
+
   // Admin: bulk product creation from an uploaded .xlsx/.csv file.
   @Roles(Role.ADMIN)
   @Post('import')
   @UseInterceptors(FileInterceptor('file'))
   import(
     @UploadedFile(
-      new ParseFilePipe({
-        validators: [
-          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5 MB
-          new FileTypeValidator({
-            fileType:
-              /^(application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-excel|text\/csv)$/,
-          }),
-        ],
-      }),
+      new ParseFilePipe({ validators: ProductsController.IMPORT_FILE_VALIDATORS }),
     )
     file: Express.Multer.File,
   ) {
