@@ -329,7 +329,7 @@ model ServiceDay {
   @@id([service, day])
 }
 
-// Historique des incidents (downtime) par service.
+// Downtime incident history per service.
 model ServiceIncident {
   id         String    @id @default(uuid())
   service    String
@@ -338,4 +338,35 @@ model ServiceIncident {
   resolvedAt DateTime?
 
   @@index([service, startedAt])
+}
+
+// Single configurable row: the promo message shown in the header's
+// announcement bar, centered on the Affiliate Program line. `code` is kept
+// separate from `message` so the admin UI can show/copy it distinctly, but
+// the storefront just renders `message` as-is (author includes the code in
+// the wording if they want it visible, e.g. "10% off with code WELCOME10").
+model PromoBanner {
+  id        String   @id @default("default")
+  message   String   @default("")
+  code      String?
+  active    Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+}
+
+// A customer/partner testimonial shown on the homepage.
+model Testimonial {
+  id          String   @id @default(uuid())
+  authorName  String
+  authorTitle String?
+  avatarUrl   String?
+  // 1-5, optional (a quote-only testimonial can omit a star rating)
+  rating      Int?
+  quote       String
+  isActive    Boolean  @default(true)
+  // Lower sorts first; ties broken by createdAt.
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
 }
