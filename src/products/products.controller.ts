@@ -2,12 +2,18 @@ import {
   Body,
   Controller,
   Delete,
+  FileTypeValidator,
   Get,
+  MaxFileSizeValidator,
   Param,
+  ParseFilePipe,
   ParseUUIDPipe,
   Patch,
   Post,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Role } from '@prisma/client';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -23,6 +29,27 @@ export class ProductsController {
   @Post()
   create(@Body() dto: CreateProductDto) {
     return this.productsService.create(dto);
+  }
+
+  // Admin: bulk product creation from an uploaded .xlsx/.csv file.
+  @Roles(Role.ADMIN)
+  @Post('import')
+  @UseInterceptors(FileInterceptor('file'))
+  import(
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5 MB
+          new FileTypeValidator({
+            fileType:
+              /^(application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-excel|text\/csv)$/,
+          }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+  ) {
+    return this.productsService.importFromExcel(file.buffer);
   }
 
   @Public()

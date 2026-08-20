@@ -20,6 +20,8 @@ import { UploadsModule } from './uploads/uploads.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { MetricsInterceptor } from './metrics/metrics.interceptor';
 import { MlmModule } from './mlm/mlm.module';
+import { PromoModule } from './promo/promo.module';
+import { TestimonialsModule } from './testimonials/testimonials.module';
 import { HealthModule } from './health/health.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
@@ -58,6 +60,8 @@ import { RolesGuard } from './auth/guards/roles.guard';
     UploadsModule,
     MetricsModule,
     MlmModule,
+    PromoModule,
+    TestimonialsModule,
     HealthModule,
   ],
   providers: [
